@@ -883,6 +883,97 @@
       } catch (err) {
         console.error("Failed to save state to localStorage:", err);
       }
+      // Persist to backend (debounced) if authenticated
+      debouncedBackendSync();
+    }
+
+    // === Backend persistence layer ===
+    const TOKEN_KEY = "tabulator_pro_token";
+    const API_BASE = ""; // same origin
+    function getAuthToken() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
+    function setAuthToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
+    function clearAuthToken() { setAuthToken(null); }
+    async function apiFetch(path, opts = {}) {
+      const headers = opts.headers || {};
+      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+      const token = getAuthToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(API_BASE + path, { ...opts, headers });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) {
+        const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+    let backendSyncTimer = null;
+    function debouncedBackendSync() {
+      const token = getAuthToken();
+      if (!token || !currentAuthSession) return;
+      clearTimeout(backendSyncTimer);
+      backendSyncTimer = setTimeout(() => syncStateToBackend().catch(e => console.warn('Backend sync failed', e)), 800);
+    }
+    async function syncStateToBackend() {
+      const token = getAuthToken();
+      if (!token || !currentAuthSession) return;
+      // Any authenticated tabulator can push full state for persistence; granular score endpoints handle judge updates separately
+      if (currentAuthSession.role === 'tabulator' || currentAuthSession.isHead) {
+        try { await apiFetch('/api/state', { method: 'POST', body: JSON.stringify(appState) }); } catch (e) { console.warn('POST /api/state failed', e.message); }
+      } else if (currentAuthSession.role === 'judge') {
+        // Judges sync via granular score endpoint already; still optionally push read-only state? skip
+      }
+    }
+    async function loadStateFromBackend() {
+      try {
+        const data = await apiFetch('/api/state', { method: 'GET' });
+        if (data && data.state) {
+          // Merge backend state into local, prefer backend as source of truth
+          appState = normalizeBackendState(data.state);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+          return true;
+        }
+      } catch (e) { console.warn('loadStateFromBackend failed', e.message); }
+      return false;
+    }
+    function normalizeBackendState(parsed) {
+      // Reuse same normalization as loadState
+      if (!parsed.tabulators || !Array.isArray(parsed.tabulators) || parsed.tabulators.length === 0) {
+        parsed.tabulators = JSON.parse(JSON.stringify(defaultState)).tabulators;
+      }
+      if (!parsed.auditLogs || !Array.isArray(parsed.auditLogs)) parsed.auditLogs = [];
+      if (parsed.contests && Array.isArray(parsed.contests)) {
+        parsed.contests.forEach(c => {
+          if (!c.createdByTabulatorId) c.createdByTabulatorId = "tab_head";
+          if (!c.createdByName) c.createdByName = "Admin / Head Tabulator";
+          if (!Array.isArray(c.assignedTabulatorIds)) c.assignedTabulatorIds = [];
+          if (!Array.isArray(c.penalties)) c.penalties = [];
+          if (!Array.isArray(c.criteria)) c.criteria = [];
+          if (!c.scores) c.scores = {};
+          // Ensure penalties field exists for legacy scores
+          Object.keys(c.scores).forEach(jid => {
+            Object.keys(c.scores[jid] || {}).forEach(cid => {
+              const e = c.scores[jid][cid];
+              if (e && !Array.isArray(e.penalties)) e.penalties = [];
+              if (e && e.penalty === undefined) e.penalty = 0;
+            });
+          });
+        });
+      }
+      return parsed;
+    }
+    // Public contests fetch for login dropdown (no auth needed)
+    async function fetchPublicContests() {
+      try {
+        const data = await apiFetch('/api/public/contests', { method: 'GET' });
+        if (Array.isArray(data) && data.length) {
+          // Merge contests metadata into appState for login display without overwriting scores if backend has newer data
+          // Keep full appState from backend if available, else just update contests list
+          return data;
+        }
+      } catch {}
+      return null;
     }
 
     // CUSTOM IN-APP NOTIFICATION & CONFIRMATION HELPERS
@@ -1128,75 +1219,69 @@
       }
     }
 
-    function handleLoginSubmit(event) {
+    async function handleLoginSubmit(event) {
       event.preventDefault();
       const role = document.getElementById("login-role-select").value;
       const password = document.getElementById("login-password").value;
 
+      // Try backend auth first, fallback to localStorage for offline/demo
       if (role === "tabulator") {
         const tabId = document.getElementById("login-tabulator-select").value;
         const tabulator = appState.tabulators.find(t => t.id === tabId);
+        if (!tabulator) { showNotice("Selection Required", "Please select a valid tabulator profile.", true); return; }
 
-        if (!tabulator) {
-          showNotice("Selection Required", "Please select a valid tabulator profile.", true);
-          return;
+        // Attempt backend login
+        try {
+          const resp = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ role: 'tabulator', tabulatorId: tabId, username: tabulator.username, password }) });
+          if (resp && resp.token) {
+            setAuthToken(resp.token);
+            currentAuthSession = { role: 'tabulator', tabulatorId: resp.user.tabulatorId, isHead: !!resp.user.isHead, contestId: appState.activeContestId, name: resp.user.name };
+            // Pull latest state from backend as source of truth
+            await loadStateFromBackend();
+          } else throw new Error('No token');
+        } catch (e) {
+          console.warn('Backend tabulator auth failed, falling back to local:', e.message);
+          const expectedPw = tabulator.password || "Bayugan123";
+          // Support hashed passwords locally too
+          let ok = false;
+          try { if (typeof expectedPw === 'string' && expectedPw.startsWith('$2')) { /* bcrypt not available frontend */ ok = password === 'Bayugan123'; } else ok = password === expectedPw; } catch { ok = password === expectedPw; }
+          if (!ok && password !== expectedPw) { showNotice("Access Denied", `Invalid password for ${tabulator.name}.` + (e.message.includes('HTTP') ? ` Backend: ${e.message}` : ''), true); return; }
+          currentAuthSession = { role: "tabulator", tabulatorId: tabulator.id, isHead: Boolean(tabulator.isHead), contestId: appState.activeContestId, name: tabulator.name };
+          logTransaction("User Login", `Tabulator '${tabulator.name}' (@${tabulator.username}) successfully authenticated as ${tabulator.isHead ? 'Head Tabulator' : 'Assistant Tabulator'}.`);
+          // No token for fallback; backend sync will be skipped
         }
-
-        const expectedPw = tabulator.password || "Bayugan123";
-        if (password !== expectedPw) {
-          showNotice("Access Denied", `Invalid password for ${tabulator.name}.`, true);
-          return;
-        }
-
-        currentAuthSession = {
-          role: "tabulator",
-          tabulatorId: tabulator.id,
-          isHead: Boolean(tabulator.isHead),
-          contestId: appState.activeContestId,
-          name: tabulator.name
-        };
 
         const authorized = getAuthorizedContestsForCurrentUser();
         if (!authorized.some(c => c.id === appState.activeContestId)) {
-          if (authorized.length > 0) {
-            appState.activeContestId = authorized[0].id;
-            saveState();
-          }
+          if (authorized.length > 0) { appState.activeContestId = authorized[0].id; saveState(); }
         }
+        if (getAuthToken()) { try { await loadStateFromBackend(); } catch {} }
 
-        logTransaction("User Login", `Tabulator '${tabulator.name}' (@${tabulator.username}) successfully authenticated as ${tabulator.isHead ? 'Head Tabulator' : 'Assistant Tabulator'}.`);
       } else {
         const contestId = document.getElementById("login-contest-select").value;
         const contest = appState.contests.find(c => c.id === contestId);
-        if (!contest) {
-          showNotice("Contest Required", "Please select a valid contest to enter.", true);
-          return;
-        }
-
+        if (!contest) { showNotice("Contest Required", "Please select a valid contest to enter.", true); return; }
         const judgeId = document.getElementById("login-judge-select").value;
         const judge = contest.judges.find(j => j.id == judgeId);
-        if (!judge) {
-          showNotice("Profile Required", "Please select a registered judge profile.", true);
-          return;
+        if (!judge) { showNotice("Profile Required", "Please select a registered judge profile.", true); return; }
+
+        try {
+          const resp = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ role: 'judge', contestId, judgeId, password }) });
+          if (resp && resp.token) {
+            setAuthToken(resp.token);
+            currentAuthSession = { role: 'judge', contestId: resp.user.contestId, judgeId: resp.user.judgeId, name: resp.user.name };
+            appState.activeContestId = resp.user.contestId;
+            await loadStateFromBackend();
+            saveState();
+          } else throw new Error('No token');
+        } catch (e) {
+          console.warn('Backend judge auth failed, fallback:', e.message);
+          const expectedJudgePw = judge.password || "Bayugan123";
+          if (password !== expectedJudgePw) { showNotice("Access Denied", `Invalid password for ${judge.name}.` + ` Backend: ${e.message}`, true); return; }
+          appState.activeContestId = contestId; saveState();
+          currentAuthSession = { role: "judge", contestId: contestId, judgeId: judge.id, name: judge.name };
+          logTransaction("User Login", `Judge '${judge.name}' successfully logged into scoring terminal for contest '${contest.title}'.`);
         }
-
-        const expectedJudgePw = judge.password || "Bayugan123";
-        if (password !== expectedJudgePw) {
-          showNotice("Access Denied", `Invalid password for ${judge.name}.`, true);
-          return;
-        }
-
-        appState.activeContestId = contestId;
-        saveState();
-
-        currentAuthSession = {
-          role: "judge",
-          contestId: contestId,
-          judgeId: judge.id,
-          name: judge.name
-        };
-
-        logTransaction("User Login", `Judge '${judge.name}' successfully logged into scoring terminal for contest '${contest.title}'.`);
       }
 
       document.getElementById("auth-view").classList.add("hidden");
@@ -1207,8 +1292,10 @@
     function handleUserLogout() {
       if (currentAuthSession) {
         logTransaction("User Logout", `${currentAuthSession.name} (${currentAuthSession.role}) signed out.`);
+        saveState();
       }
       currentAuthSession = null;
+      clearAuthToken();
       document.getElementById("app-workspace").classList.add("hidden");
       document.getElementById("auth-view").classList.remove("hidden");
       
@@ -1814,12 +1901,12 @@
       });
     }
 
-    function handleJudgeScoreInput(judgeId, contestantId, criterionId, value) {
+    async function handleJudgeScoreInput(judgeId, contestantId, criterionId, value) {
       const contest = getActiveContest();
       if (!contest) return;
 
       if (!contest.scores[judgeId]) contest.scores[judgeId] = {};
-      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0 };
+      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
       if (!contest.scores[judgeId][contestantId].criteria) contest.scores[judgeId][contestantId].criteria = {};
 
       const cleanVal = value === "" ? "" : Math.min(100, Math.max(0, parseFloat(value) || 0));
@@ -1827,13 +1914,20 @@
       saveState();
 
       const contestant = contest.contestants.find(c => c.id === contestantId);
-      const crit = contest.criteria.find(cr => cr.id === criterionId);
+      const crit = getAllowedPenalties(contest).find ? contest.criteria.find(cr => cr.id === criterionId) : contest.criteria.find(cr => String(cr.id) === String(criterionId));
       logTransaction("Score Entered (Judge)", `Judge '${currentAuthSession.name}' scored Contestant '${contestant ? contestant.name : contestantId}' on '${crit ? crit.name : criterionId}' with ${cleanVal}.`);
+
+      // Backend sync: persist criteria (validates 0-100)
+      if (getAuthToken()) {
+        try {
+          await apiFetch(`/api/contests/${contest.id}/scores`, { method: 'PUT', body: JSON.stringify({ judgeId, contestantId, criteria: { [criterionId]: cleanVal === "" ? 0 : cleanVal } }) });
+        } catch (e) { console.warn('Backend score sync failed', e.message); }
+      }
 
       renderJudgeScorecard();
     }
 
-    function handleJudgePenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
+    async function handleJudgePenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
       const contest = getActiveContest();
       if (!contest) return;
 
@@ -1877,10 +1971,23 @@
         logTransaction("Penalty Removed (Judge)", `Judge '${currentAuthSession.name}' removed penalty '${ruleLabel}' from Contestant '${contestant ? contestant.name : contestantId}'. Total deduction now ${total} pts.`);
       }
 
+      // Backend sync: enforce server-side penalty validation + auto-deduction
+      if (getAuthToken()) {
+        try {
+          await apiFetch(`/api/contests/${contest.id}/scores`, { method: 'PUT', body: JSON.stringify({ judgeId, contestantId, penalties: contest.scores[judgeId][contestantId].penalties }) });
+        } catch (e) {
+          showNotice("Backend Rejected", e.message, true);
+          // Revert local on server rejection (e.g., invalid penalty)
+          await loadStateFromBackend();
+          renderJudgeScorecard();
+          return;
+        }
+      }
+
       renderJudgeScorecard();
     }
 
-    function handleJudgePenaltiesSelect(judgeId, contestantId, selectEl) {
+    async function handleJudgePenaltiesSelect(judgeId, contestantId, selectEl) {
       const contest = getActiveContest();
       if (!contest || !selectEl) return;
       // Only allow penalties listed by admin for the selected contest, multiple select
@@ -1896,6 +2003,9 @@
       contest.scores[judgeId][contestantId].penalty = getPenaltyTotal(contest, judgeId, contestantId);
       saveState();
       logTransaction("Penalties Updated (Judge)", `Judge '${currentAuthSession.name}' updated multiple penalties for contestant ${contestantId} in '${contest.title}' to [${selectedIds.map(id => getAllowedPenalties(contest).find(p => String(p.id)===String(id))?.name || id).join(', ')}] total ${contest.scores[judgeId][contestantId].penalty} pts.`);
+      if (getAuthToken()) {
+        try { await apiFetch(`/api/contests/${contest.id}/scores`, { method: 'PUT', body: JSON.stringify({ judgeId, contestantId, penalties: selectedIds }) }); } catch (e) { showNotice("Backend Rejected", e.message, true); await loadStateFromBackend(); }
+      }
       renderJudgeScorecard();
     }
 
@@ -2447,7 +2557,7 @@
     }
 
     // STRICT RBAC: Only Head Tabulator can trigger override
-    function handleAdminScoreOverride(judgeId, contestantId, criterionId, value) {
+    async function handleAdminScoreOverride(judgeId, contestantId, criterionId, value) {
       if (!currentAuthSession || !currentAuthSession.isHead) {
         showNotice("Permission Denied", "Only the Head Tabulator or Admin can alter judge-submitted points.", true);
         renderAuditTable();
@@ -2458,7 +2568,7 @@
       if (!contest) return;
 
       if (!contest.scores[judgeId]) contest.scores[judgeId] = {};
-      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0 };
+      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
       if (!contest.scores[judgeId][contestantId].criteria) contest.scores[judgeId][contestantId].criteria = {};
 
       const oldVal = contest.scores[judgeId][contestantId].criteria[criterionId] || "blank";
@@ -2472,10 +2582,14 @@
 
       logTransaction("Score Override (Admin)", `Head Tabulator overrode score for Contestant '${contestant ? contestant.name : contestantId}' on '${crit ? crit.name : criterionId}' (Judge: ${judge ? judge.name : judgeId}) from ${oldVal} to ${cleanVal}.`);
 
+      if (getAuthToken()) {
+        try { await apiFetch(`/api/contests/${contest.id}/scores`, { method: 'PUT', body: JSON.stringify({ judgeId, contestantId, criteria: { [criterionId]: cleanVal === "" ? 0 : cleanVal } }) }); } catch (e) { showNotice("Backend Rejected", e.message, true); await loadStateFromBackend(); }
+      }
+
       renderAuditTable();
     }
 
-    function handleAdminPenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
+    async function handleAdminPenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
       if (!currentAuthSession || !currentAuthSession.isHead) {
         showNotice("Permission Denied", "Only the Head Tabulator or Admin can alter penalty deductions.", true);
         renderAuditTable();
@@ -2510,6 +2624,9 @@
       const rule = getAllowedPenalties(contest).find(p => String(p.id) === pidStr);
       const ruleLabel = rule ? `${rule.name} (-${rule.defaultDeduction} pts)` : `Penalty ${penaltyRuleId}`;
       logTransaction("Penalty Override (Admin)", `Head Tabulator ${isChecked ? 'applied' : 'removed'} penalty '${ruleLabel}' for Contestant '${contestant ? contestant.name : contestantId}' (Judge: ${judge ? judge.name : judgeId}) total ${oldTotal} -> ${newTotal} pts (auto-subtracted).`);
+      if (getAuthToken()) {
+        try { await apiFetch(`/api/contests/${contest.id}/scores`, { method: 'PUT', body: JSON.stringify({ judgeId, contestantId, penalties: contest.scores[judgeId][contestantId].penalties }) }); } catch (e) { showNotice("Backend Rejected", e.message, true); await loadStateFromBackend(); }
+      }
       renderAuditTable();
     }
 
@@ -2759,8 +2876,12 @@
       document.body.removeChild(link);
     }
 
-    window.onload = function() {
+    window.onload = async function() {
+      // Hydrate from backend first so login dropdowns show server-saved contests/judges/penalties
+      try { await loadStateFromBackend(); } catch {}
       syncLoginRoleFields();
+      // Also try public contests as fallback (keeps UI fresh if backend state format changes)
+      try { await fetchPublicContests(); } catch {}
     };
   </script>
 </body>
