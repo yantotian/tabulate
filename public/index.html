@@ -223,7 +223,7 @@
             <div>
               <span class="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100 no-print">Judge Evaluation Sheet</span>
               <h1 id="judge-sheet-title" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1 uppercase tracking-tight">Official Contest Scorecard</h1>
-              <p class="text-xs text-slate-500 mt-0.5">Scoring scale: 0 to 100 per criterion. Infraction points are deducted after weighting.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Scoring scale: 0 to 100 per criterion. Penalties: judges may only select from penalties listed by admin/tabulator for this contest (multiple select) — deductions are summed and automatically subtracted from the weighted score.</p>
             </div>
 
             <!-- Terminal Actions -->
@@ -1669,6 +1669,58 @@
       showNotice("Password Updated", "Your password has been updated successfully!");
     }
 
+    // === Penalties: Judge can ONLY select from admin/tabulator-defined list for the active contest ===
+    // Admin defines contest.penalties = [{id, name, defaultDeduction}, ...] per contest.
+    // Judges see a multiple-select UI (checkboxes + hidden <select multiple>) bound to that list,
+    // and deductions are auto-summed and subtracted from weighted scores.
+
+    function getAllowedPenalties(contest) {
+      // Returns the penalties listed by admin/tabulator for the given contest/competition
+      if (!contest || !Array.isArray(contest.penalties)) return [];
+      return contest.penalties;
+    }
+
+    function isPenaltyAllowed(contest, penaltyId) {
+      // Enforces that judges can only pick penalties that exist in the selected contest
+      return getAllowedPenalties(contest).some(p => String(p.id) === String(penaltyId));
+    }
+
+    function calculatePenaltyDeduction(contest, selectedPenaltyIds) {
+      // Sums defaultDeduction for multiple-selected penalties - auto subtracted from scores
+      if (!Array.isArray(selectedPenaltyIds) || selectedPenaltyIds.length === 0) return 0;
+      return selectedPenaltyIds.reduce((sum, pid) => {
+        const rule = getAllowedPenalties(contest).find(p => String(p.id) === String(pid));
+        return sum + (rule ? (parseFloat(rule.defaultDeduction) || 0) : 0);
+      }, 0);
+    }
+
+    // Helper: get selected penalty IDs for a contestant/judge entry (supports legacy numeric penalty)
+    function getSelectedPenaltyIds(contest, judgeId, contestantId) {
+      const entry = contest.scores[judgeId] && contest.scores[judgeId][contestantId];
+      if (!entry) return [];
+      if (Array.isArray(entry.penalties)) return entry.penalties.filter(pid => isPenaltyAllowed(contest, pid));
+      if (Array.isArray(entry.penaltyIds)) return entry.penaltyIds.filter(pid => isPenaltyAllowed(contest, pid));
+      return [];
+    }
+
+    function getPenaltyTotal(contest, judgeId, contestantId) {
+      const entry = contest.scores[judgeId] && contest.scores[judgeId][contestantId];
+      const selected = getSelectedPenaltyIds(contest, judgeId, contestantId);
+      if (selected.length > 0) {
+        return calculatePenaltyDeduction(contest, selected);
+      }
+      // Legacy fallback: numeric penalty stored directly (pre-multiple-select data)
+      if (entry && entry.penalty !== undefined && entry.penalty !== "" && entry.penalty !== null) {
+        return parseFloat(entry.penalty) || 0;
+      }
+      return 0;
+    }
+
+    function formatPenaltyLabel(rule) {
+      const ded = parseFloat(rule.defaultDeduction) || 0;
+      return `${rule.name} (-${ded} pts)`;
+    }
+
     function renderJudgeScorecard() {
       const contest = getActiveContest();
       if (!contest || !currentAuthSession || currentAuthSession.role !== "judge") return;
@@ -1685,7 +1737,7 @@
         headHTML += `<th class="py-3 px-3 text-center">${crit.name} <span class="text-indigo-600 font-black">(${crit.weight}%)</span></th>`;
       });
       headHTML += `
-        <th class="py-3 px-3 text-center text-rose-600 font-bold">Penalties (pts)</th>
+        <th class="py-3 px-3 text-center text-rose-600 font-bold">Penalties (multiple select)</th>
         <th class="py-3 px-4 text-right font-black">Net Weighted</th>
       </tr>`;
       thead.innerHTML = headHTML;
@@ -1718,25 +1770,44 @@
           `;
         });
 
-        const penaltyVal = (contest.scores[judgeId] &&
-                            contest.scores[judgeId][c.id] &&
-                            contest.scores[judgeId][c.id].penalty !== undefined)
-                            ? contest.scores[judgeId][c.id].penalty : "";
+        const selectedIds = getSelectedPenaltyIds(contest, judgeId, c.id);
+        const penaltyTotal = getPenaltyTotal(contest, judgeId, c.id);
+        const netScore = Math.max(0, weightedSum - penaltyTotal);
 
-        const netScore = Math.max(0, weightedSum - (parseFloat(penaltyVal) || 0));
+        // Build penalty multiple-select UI based on contest.penalties
+        let penaltyCellHTML = "";
+        if (getAllowedPenalties(contest).length === 0) {
+          penaltyCellHTML = `<span class="text-xs text-slate-400 italic">No penalties defined for this contest</span>`;
+        } else {
+          // Using checkboxes as multiple-select bound to contest-specific penalties
+          penaltyCellHTML = `<div class="space-y-1.5 text-left min-w-[180px] max-w-[260px]">`;
+          getAllowedPenalties(contest).forEach(rule => {
+            const isChecked = selectedIds.some(id => String(id) === String(rule.id));
+            penaltyCellHTML += `
+              <label class="flex items-center gap-2 px-2 py-1 rounded-lg border cursor-pointer transition text-xs ${isChecked ? 'bg-rose-50 border-rose-300 text-rose-800 font-semibold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="handleJudgePenaltyToggle(${judgeId}, ${c.id}, ${rule.id}, this.checked)" class="w-3.5 h-3.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300" />
+                <span class="flex-1">${rule.name} <span class="font-bold">(-${parseFloat(rule.defaultDeduction) || 0})</span></span>
+              </label>
+            `;
+          });
+          penaltyCellHTML += `<div class="pt-1.5 mt-1 border-t border-rose-100 flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-600">Total Deduction:</span>
+              <span class="font-black ${penaltyTotal > 0 ? 'text-rose-600' : 'text-slate-500'}">-${penaltyTotal.toFixed(1)} pts</span>
+            </div>`;
+          // Accessible native multiple select (hidden visual but keeps semantics for forms/assistive tech) - synced with checkboxes
+          penaltyCellHTML += `
+            <select multiple class="sr-only" aria-hidden="true" tabindex="-1">
+              ${getAllowedPenalties(contest).map(rule => `<option value="${rule.id}" ${selectedIds.some(id => String(id) === String(rule.id)) ? 'selected' : ''}>${formatPenaltyLabel(rule)}</option>`).join('')}
+            </select>
+          `;
+          penaltyCellHTML += `</div>`;
+        }
 
         rowHTML += `
-          <td class="py-2.5 px-3 text-center">
-            <div class="inline-flex items-center space-x-1">
-              <span class="text-xs text-rose-600 font-black">-</span>
-              <input type="number" min="0" step="0.5" 
-                value="${penaltyVal}" 
-                placeholder="0"
-                onchange="handleJudgePenaltyInput(${judgeId}, ${c.id}, this.value)"
-                class="w-20 text-center border border-rose-300 rounded-lg py-1 px-2 text-sm text-rose-700 font-bold focus:ring-2 focus:ring-rose-500 focus:outline-none bg-rose-50/40" />
-            </div>
+          <td class="py-2.5 px-3 align-top">
+            ${penaltyCellHTML}
           </td>
-          <td class="py-3 px-4 text-right font-black text-indigo-950 text-base">${netScore.toFixed(2)}%</td>
+          <td class="py-3 px-4 text-right font-black text-indigo-950 text-base align-top">${netScore.toFixed(2)}%</td>
         </tr>`;
 
         tbody.innerHTML += rowHTML;
@@ -1762,6 +1833,73 @@
       renderJudgeScorecard();
     }
 
+    function handleJudgePenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
+      const contest = getActiveContest();
+      if (!contest) return;
+
+      // Enforce: judges can only select penalties listed by admin/tabulator for this contest
+      if (!isPenaltyAllowed(contest, penaltyRuleId)) {
+        showNotice("Invalid Penalty", "This penalty is not defined for the selected contest. Please select only penalties listed by the admin/tabulator.", true);
+        renderJudgeScorecard();
+        return;
+      }
+
+      if (!contest.scores[judgeId]) contest.scores[judgeId] = {};
+      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
+      if (!Array.isArray(contest.scores[judgeId][contestantId].penalties)) {
+        // migrate legacy numeric penalty: preserve but start fresh selection
+        contest.scores[judgeId][contestantId].penalties = [];
+      }
+
+      let selected = contest.scores[judgeId][contestantId].penalties;
+      const pidStr = String(penaltyRuleId);
+      // Normalize to numeric id when possible for consistent storage
+      const normalizedId = getAllowedPenalties(contest).find(p => String(p.id) === pidStr)?.id ?? penaltyRuleId;
+      if (isChecked) {
+        if (!selected.some(id => String(id) === pidStr)) selected.push(normalizedId);
+      } else {
+        selected = selected.filter(id => String(id) !== pidStr);
+        contest.scores[judgeId][contestantId].penalties = selected;
+      }
+
+      // Keep numeric penalty in sync for legacy calculations / leaderboard - auto subtract
+      const total = getPenaltyTotal(contest, judgeId, contestantId);
+      contest.scores[judgeId][contestantId].penalty = total;
+
+      saveState();
+
+      const contestant = contest.contestants.find(c => c.id === contestantId);
+      const rule = getAllowedPenalties(contest).find(p => String(p.id) === pidStr);
+      const ruleLabel = rule ? `${rule.name} (-${rule.defaultDeduction} pts)` : `Penalty ${penaltyRuleId}`;
+      if (isChecked) {
+        logTransaction("Penalty Applied (Judge)", `Judge '${currentAuthSession.name}' applied penalty '${ruleLabel}' to Contestant '${contestant ? contestant.name : contestantId}'. Total deduction now ${total} pts (auto-subtracted).`);
+      } else {
+        logTransaction("Penalty Removed (Judge)", `Judge '${currentAuthSession.name}' removed penalty '${ruleLabel}' from Contestant '${contestant ? contestant.name : contestantId}'. Total deduction now ${total} pts.`);
+      }
+
+      renderJudgeScorecard();
+    }
+
+    function handleJudgePenaltiesSelect(judgeId, contestantId, selectEl) {
+      const contest = getActiveContest();
+      if (!contest || !selectEl) return;
+      // Only allow penalties listed by admin for the selected contest, multiple select
+      const rawSelected = Array.from(selectEl.selectedOptions).map(o => {
+        const num = Number(o.value);
+        return isNaN(num) ? o.value : num;
+      });
+      const selectedIds = rawSelected.filter(pid => isPenaltyAllowed(contest, pid));
+      if (!contest.scores[judgeId]) contest.scores[judgeId] = {};
+      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
+      contest.scores[judgeId][contestantId].penalties = selectedIds;
+      // Auto subtract: deduction summed from selected penalties
+      contest.scores[judgeId][contestantId].penalty = getPenaltyTotal(contest, judgeId, contestantId);
+      saveState();
+      logTransaction("Penalties Updated (Judge)", `Judge '${currentAuthSession.name}' updated multiple penalties for contestant ${contestantId} in '${contest.title}' to [${selectedIds.map(id => getAllowedPenalties(contest).find(p => String(p.id)===String(id))?.name || id).join(', ')}] total ${contest.scores[judgeId][contestantId].penalty} pts.`);
+      renderJudgeScorecard();
+    }
+
+    // Legacy handler kept for backwards compatibility (numeric input no longer used in UI)
     function handleJudgePenaltyInput(judgeId, contestantId, value) {
       const contest = getActiveContest();
       if (!contest) return;
@@ -1771,6 +1909,8 @@
 
       const cleanVal = value === "" ? 0 : Math.max(0, parseFloat(value) || 0);
       contest.scores[judgeId][contestantId].penalty = cleanVal;
+      // Clear multiple-select array when manually overriding to legacy numeric value
+      if (cleanVal === 0) contest.scores[judgeId][contestantId].penalties = [];
       saveState();
 
       const contestant = contest.contestants.find(c => c.id === contestantId);
@@ -1863,7 +2003,7 @@
       // 2. Penalties
       const penContainer = document.getElementById("penalties-editor-list");
       penContainer.innerHTML = "";
-      contest.penalties.forEach(pen => {
+      getAllowedPenalties(contest).forEach(pen => {
         const div = document.createElement("div");
         div.className = "flex items-center gap-2 bg-rose-50/40 p-2.5 rounded-xl border border-rose-200/80";
         div.innerHTML = `
@@ -2071,9 +2211,20 @@
 
     function updatePenaltyRule(id, key, val) {
       const contest = getActiveContest();
-      const rule = contest.penalties.find(p => p.id === id);
+      const rule = getAllowedPenalties(contest).find(p => p.id === id);
       if (rule) {
         rule[key] = key === "defaultDeduction" ? Math.max(0, parseFloat(val) || 0) : val;
+        // Recompute stored penalty totals for any scores that have this penalty selected
+        if (key === "defaultDeduction" && contest.scores) {
+          Object.keys(contest.scores).forEach(judgeId => {
+            Object.keys(contest.scores[judgeId]).forEach(contestantId => {
+              const entry = contest.scores[judgeId][contestantId];
+              if (entry && Array.isArray(entry.penalties) && entry.penalties.some(pid => String(pid) === String(id))) {
+                entry.penalty = getPenaltyTotal(contest, judgeId, contestantId);
+              }
+            });
+          });
+        }
         saveState();
         logTransaction("Penalty Rule Updated", `Updated rule '${rule.name}' in '${contest.title}'.`);
         renderContestSetup();
@@ -2082,8 +2233,20 @@
 
     function removePenaltyRule(id) {
       const contest = getActiveContest();
-      const rule = contest.penalties.find(p => p.id === id);
+      const rule = getAllowedPenalties(contest).find(p => p.id === id);
       contest.penalties = contest.penalties.filter(p => p.id !== id);
+      // Clean up selected penalty references in all judge scores for this contest
+      if (contest.scores) {
+        Object.keys(contest.scores).forEach(judgeId => {
+          Object.keys(contest.scores[judgeId]).forEach(contestantId => {
+            const entry = contest.scores[judgeId][contestantId];
+            if (entry && Array.isArray(entry.penalties)) {
+              entry.penalties = entry.penalties.filter(pid => String(pid) !== String(id));
+              entry.penalty = getPenaltyTotal(contest, judgeId, contestantId);
+            }
+          });
+        });
+      }
       saveState();
       logTransaction("Penalty Rule Removed", `Removed penalty rule '${rule ? rule.name : id}' from '${contest.title}'.`);
       renderContestSetup();
@@ -2215,7 +2378,7 @@
       contest.criteria.forEach(crit => {
         headHTML += `<th class="py-3 px-3 text-center">${crit.name} (${crit.weight}%)</th>`;
       });
-      headHTML += `<th class="py-3 px-3 text-center text-rose-600">Deductions</th><th class="py-3 px-4 text-right">Net Score</th></tr>`;
+      headHTML += `<th class="py-3 px-3 text-center text-rose-600">Penalties (multiple select)</th><th class="py-3 px-4 text-right">Net Score</th></tr>`;
       thead.innerHTML = headHTML;
 
       tbody.innerHTML = "";
@@ -2239,17 +2402,44 @@
           `;
         });
 
-        const penalty = (contest.scores[judgeId] && contest.scores[judgeId][c.id]) ? contest.scores[judgeId][c.id].penalty || 0 : 0;
-        const net = Math.max(0, weightedSum - penalty);
+        const penaltyTotal = getPenaltyTotal(contest, judgeId, c.id);
+        const selectedPenaltyIds = getSelectedPenaltyIds(contest, judgeId, c.id);
+        const net = Math.max(0, weightedSum - penaltyTotal);
+
+        // Penalty multiple-select cell (contest-specific penalties) - Head can edit, Assistant read-only
+        let penaltyCell = "";
+        if (getAllowedPenalties(contest).length === 0) {
+          penaltyCell = `<span class="text-xs text-slate-400 italic">No penalties</span>`;
+        } else {
+          penaltyCell = `<div class="space-y-1.5 text-left min-w-[180px] max-w-[260px]">`;
+          getAllowedPenalties(contest).forEach(rule => {
+            const isChecked = selectedPenaltyIds.some(id => String(id) === String(rule.id));
+            const disabledAttr = isHead ? '' : 'disabled';
+            const labelClass = isChecked
+              ? (isHead ? 'bg-rose-50 border-rose-300 text-rose-800 font-semibold' : 'bg-slate-100 border-slate-200 text-slate-500 font-semibold')
+              : (isHead ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50' : 'bg-slate-50 border-slate-200 text-slate-500');
+            const onchange = isHead ? `onchange="handleAdminPenaltyToggle(${judgeId}, ${c.id}, ${rule.id}, this.checked)"` : '';
+            penaltyCell += `
+              <label class="flex items-center gap-2 px-2 py-1 rounded-lg border cursor-pointer transition text-xs ${labelClass} ${!isHead ? 'cursor-not-allowed' : ''}">
+                <input type="checkbox" ${isChecked ? 'checked' : ''} ${disabledAttr} ${onchange} class="w-3.5 h-3.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300" />
+                <span class="flex-1">${rule.name} <span class="font-bold">(-${parseFloat(rule.defaultDeduction) || 0})</span></span>
+              </label>
+            `;
+          });
+          penaltyCell += `<div class="pt-1 border-t border-rose-100 flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-600">Total:</span>
+              <span class="font-black ${penaltyTotal > 0 ? 'text-rose-600' : 'text-slate-500'}">-${penaltyTotal.toFixed(1)} pts</span>
+            </div>`;
+          // Native multiple select for semantics (hidden)
+          penaltyCell += `<select multiple class="sr-only" tabindex="-1" aria-hidden="true">${getAllowedPenalties(contest).map(rule => `<option value="${rule.id}" ${selectedPenaltyIds.some(id => String(id) === String(rule.id)) ? 'selected' : ''}>${formatPenaltyLabel(rule)}</option>`).join('')}</select>`;
+          penaltyCell += `</div>`;
+        }
 
         rowHTML += `
-          <td class="py-2.5 px-3 text-center">
-            <input type="number" min="0" step="0.5" value="${penalty}" 
-              ${isHead ? `onchange="handleAdminPenaltyOverride(${judgeId}, ${c.id}, this.value)"` : 'disabled'}
-              title="${isHead ? 'Override Penalty' : 'Restricted: Read-Only for Assistant Tabulators'}"
-              class="w-20 text-center border ${isHead ? 'border-rose-300 bg-rose-50/40 text-rose-700 cursor-text focus:ring-2 focus:ring-rose-500' : 'border-slate-200 bg-slate-100 cursor-not-allowed text-slate-500'} rounded-lg py-1 px-2 text-xs font-bold focus:outline-none" />
+          <td class="py-2.5 px-3 align-top">
+            ${penaltyCell}
           </td>
-          <td class="py-3 px-4 text-right font-black text-indigo-900">${net.toFixed(2)}%</td>
+          <td class="py-3 px-4 text-right font-black text-indigo-900 align-top">${net.toFixed(2)}%</td>
         </tr>`;
 
         tbody.innerHTML += rowHTML;
@@ -2285,6 +2475,45 @@
       renderAuditTable();
     }
 
+    function handleAdminPenaltyToggle(judgeId, contestantId, penaltyRuleId, isChecked) {
+      if (!currentAuthSession || !currentAuthSession.isHead) {
+        showNotice("Permission Denied", "Only the Head Tabulator or Admin can alter penalty deductions.", true);
+        renderAuditTable();
+        return;
+      }
+      const contest = getActiveContest();
+      if (!contest) return;
+      if (!isPenaltyAllowed(contest, penaltyRuleId)) {
+        showNotice("Invalid Penalty", "This penalty is not defined for the selected contest.", true);
+        renderAuditTable();
+        return;
+      }
+      if (!contest.scores[judgeId]) contest.scores[judgeId] = {};
+      if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
+      if (!Array.isArray(contest.scores[judgeId][contestantId].penalties)) contest.scores[judgeId][contestantId].penalties = [];
+
+      let selected = contest.scores[judgeId][contestantId].penalties;
+      const pidStr = String(penaltyRuleId);
+      const normalizedId = getAllowedPenalties(contest).find(p => String(p.id) === pidStr)?.id ?? penaltyRuleId;
+      const oldTotal = getPenaltyTotal(contest, judgeId, contestantId);
+      if (isChecked) {
+        if (!selected.some(id => String(id) === pidStr)) selected.push(normalizedId);
+      } else {
+        selected = selected.filter(id => String(id) !== pidStr);
+        contest.scores[judgeId][contestantId].penalties = selected;
+      }
+      const newTotal = getPenaltyTotal(contest, judgeId, contestantId);
+      contest.scores[judgeId][contestantId].penalty = newTotal;
+      saveState();
+      const judge = contest.judges.find(j => j.id == judgeId);
+      const contestant = contest.contestants.find(c => c.id === contestantId);
+      const rule = getAllowedPenalties(contest).find(p => String(p.id) === pidStr);
+      const ruleLabel = rule ? `${rule.name} (-${rule.defaultDeduction} pts)` : `Penalty ${penaltyRuleId}`;
+      logTransaction("Penalty Override (Admin)", `Head Tabulator ${isChecked ? 'applied' : 'removed'} penalty '${ruleLabel}' for Contestant '${contestant ? contestant.name : contestantId}' (Judge: ${judge ? judge.name : judgeId}) total ${oldTotal} -> ${newTotal} pts (auto-subtracted).`);
+      renderAuditTable();
+    }
+
+    // Legacy numeric override kept for backward compatibility
     function handleAdminPenaltyOverride(judgeId, contestantId, value) {
       if (!currentAuthSession || !currentAuthSession.isHead) {
         showNotice("Permission Denied", "Only the Head Tabulator or Admin can alter penalty deductions.", true);
@@ -2301,6 +2530,7 @@
       const oldVal = contest.scores[judgeId][contestantId].penalty || 0;
       const cleanVal = value === "" ? 0 : Math.max(0, parseFloat(value) || 0);
       contest.scores[judgeId][contestantId].penalty = cleanVal;
+      if (cleanVal === 0) contest.scores[judgeId][contestantId].penalties = [];
       saveState();
 
       const judge = contest.judges.find(j => j.id == judgeId);
@@ -2326,7 +2556,7 @@
                         ? parseFloat(contest.scores[j.id][c.id].criteria[crit.id]) || 0 : 0;
             jSum += (raw * (crit.weight / 100));
           });
-          const penalty = (contest.scores[j.id] && contest.scores[j.id][c.id]) ? parseFloat(contest.scores[j.id][c.id].penalty) || 0 : 0;
+          const penalty = getPenaltyTotal(contest, j.id, c.id);
           totalDeductions += penalty;
 
           judgeTotals.push(Math.max(0, jSum - penalty));
