@@ -8,31 +8,33 @@ Full-fledged web app for contest tabulation with **RBAC** (Head Tabulator / Assi
 
 ```
 D:\tabulate\
+├── backend/                # Express backend (Node 20)
+│   ├── server.js           # API + static serving (frontend/dist fallback → backend/public)
+│   ├── package.json        # backend deps: express, helmet, zod, bcryptjs, jsonwebtoken
+│   ├── data/
+│   │   └── app-state.json  # Persisted state (gitignored, POST /api/state)
+│   ├── logs/               # PM2 logs (backend/logs/)
+│   ├── public/
+│   │   └── index.html      # Legacy vanilla fallback (served if no Angular build)
+│   ├── .env / .env.example # JWT_SECRET, PORT, HOST
+│   └── ecosystem.config.js # PM2 → ./server.js
 ├── frontend/               # Angular 20 SPA (standalone)
 │   ├── src/app/
 │   │   ├── core/           # api.service.ts, auth.service.ts, state.service.ts, interceptors
 │   │   ├── features/auth/  # LoginComponent
 │   │   ├── features/shell/ # ShellComponent (header + contest toolbar)
-│   │   ├── features/judge/ # ScorecardComponent (judge terminal)
+│   │   ├── features/judge/ # ScorecardComponent (judge terminal 0→weight direct-sum)
 │   │   ├── features/tabulator/ # Setup / Audit / Leaderboard / AuditLogs
 │   │   ├── shared/         # NoticeModal, ConfirmModal, Header
 │   │   ├── guards/         # authGuard, headGuard
 │   │   └── models/         # app-state.model.ts
 │   ├── tailwind.config.js  # Tailwind 3.4 (PostCSS build, not CDN)
-│   ├── proxy.conf.json     # dev proxy /api -> :3000
-│   └── dist/frontend/browser/ # ng build output (served by Express)
-├── public/
-│   └── index.html          # Legacy vanilla fallback (served if no Angular build)
-├── data/
-│   └── app-state.json      # Server-side persisted state (gitignored, POST /api/state)
-├── logs/                   # PM2 logs
-├── server.js               # Express (serves Angular dist or public fallback)
-├── package.json            # Root scripts: build, client:build, client:dev
-├── ecosystem.config.js
-├── Dockerfile              # Multi-stage: frontend-build -> production
-├── docker-compose.yml
-├── nginx.conf
-├── .env / .env.example
+│   ├── proxy.conf.json     # dev proxy /api -> :3000 (backend)
+│   └── dist/frontend/browser/ # ng build output (served by backend)
+├── package.json            # Root workspaces orchestrator (frontend + backend)
+├── Dockerfile              # Multi-stage: frontend-build → backend (backend/server.js)
+├── docker-compose.yml      # Volumes: ./backend/data, ./backend/logs, env_file: backend/.env
+├── nginx.conf              # proxy_pass → backend:3000
 ├── .gitignore / .dockerignore
 └── index.html              # Legacy root copy (direct file open)
 ```
@@ -46,18 +48,23 @@ D:\tabulate\
 ### 1. Install & Run — Production (Angular built)
 
 ```powershell
-# In D:\tabulate
-npm install
+# In D:\tabulate (workspaces root)
+npm install                 # installs root + frontend + backend (workspaces)
+# or separately:
+npm --prefix backend install
 npm --prefix frontend install
-npm run build          # builds frontend/dist/frontend/browser
-npm start
+npm run build               # builds frontend/dist/frontend/browser
+npm start                   # → npm --prefix backend start (serves frontend/dist)
+# backend directly:
+npm --prefix backend start
 ```
 
 ### 1b. Development (HMR + API proxy)
 
 ```powershell
 # Terminal 1: Express API on :3000
-npm run dev
+npm run dev                 # → npm --prefix backend run dev (watch backend/server.js)
+# or: npm --prefix backend run dev
 # Terminal 2: Angular on :4200 proxied to /api
 npm run client:dev
 # or both together:
@@ -109,12 +116,12 @@ scp -r D:\tabulate user@YOUR_SERVER_IP:/opt/tabulator-pro
 
 # 2. On server
 cd /opt/tabulator-pro
-npm install --omit=dev
-cp .env.example .env   # edit PORT if needed
+npm --prefix backend install --omit=dev
+cp backend/.env.example backend/.env   # edit PORT/JWT_SECRET if needed
 
 # 3. Run with PM2 (keeps alive after logout / reboot)
 npm install -g pm2
-pm2 start ecosystem.config.js
+pm2 start backend/ecosystem.config.js
 pm2 save
 pm2 startup  # follow printed instructions
 
@@ -148,12 +155,14 @@ curl http://localhost:3000/api/health
 ```powershell
 # On Windows Server with Node installed
 cd C:\inetpub\tabulator-pro
-npm install --omit=dev
+npm --prefix backend install --omit=dev
 # Option 1: Run directly
+npm --prefix backend start
+# or via root orchestrator:
 npm start
 # Option 2: PM2 as Windows Service (use pm2-windows-service or NSSM)
 npm install -g pm2
-pm2 start ecosystem.config.js
+pm2 start backend/ecosystem.config.js
 pm2 save
 
 # IIS: Install Application Request Routing + URL Rewrite, then create reverse proxy rule to http://localhost:3000
@@ -187,8 +196,11 @@ NODE_ENV=production
 # On server
 cd /opt/tabulator-pro
 git pull          # or re-upload via scp
-npm install
-pm2 restart tabulator-pro   # or docker compose up -d --build
+npm --prefix backend install
+npm --prefix frontend install && npm run build
+pm2 restart backend/ecosystem.config.js  # or: pm2 restart tabulator-pro
+# or docker:
+docker compose up -d --build
 ```
 
 ## Verification
@@ -205,7 +217,7 @@ docker compose up -d && curl http://localhost:3000/api/health
 
 ## Notes
 
-- **Data:** Angular frontend is **backend-first**: `StateService` loads from `GET /api/state` & `GET /api/contests`; legacy `localStorage` key `tabulator_pro_rbac_v6_audit` is deprecated (only JWT token kept in `localStorage`). All scores/creations go via REST (`PUT /api/contests/:id/scores`, etc.).
-- **Security:** Helmet, CORS, compression, JWT (12h) enabled in `server.js`. RBAC enforced both client (guards) and server (`requireHead`, `hasContestAccess`).
-- **Build:** Angular production build is ~110kB transfer; Tailwind purged via PostCSS. `Dockerfile` multi-stage ensures image contains built SPA. `docker compose up -d --build` will build frontend automatically.
-- **Legacy fallback:** If `frontend/dist/frontend/browser` missing, Express falls back to `public/index.html` vanilla SPA (useful for static hosting without Node build).
+- **Data:** Angular frontend is **backend-first**: `StateService` loads from `GET /api/state` & `GET /api/contests`; legacy `localStorage` key `tabulator_pro_rbac_v6_audit` is deprecated (only JWT token kept). All scores/creations go via REST (`PUT /api/contests/:id/scores` validated `0→weight`). Persisted file now `backend/data/app-state.json` (migrated `_schemaVersion:2` direct-sum, step `0.01`).
+- **Security:** Helmet, CORS, compression, JWT (12h) enabled in `backend/server.js`. RBAC enforced both client (guards) and server (`requireHead`, `hasContestAccess`, per-criterion `getCriterionWeight`).
+- **Build:** Angular production build is ~110kB transfer; Tailwind purged. `Dockerfile` multi-stage builds `frontend` then `backend/server.js` (`CMD ["node","backend/server.js"]`). `docker compose` mounts `./backend/data` & `./backend/logs` and uses `env_file: backend/.env`.
+- **Legacy fallback:** If `frontend/dist/frontend/browser` missing, `backend/server.js` falls back to `backend/public/index.html` vanilla SPA (both patched weight-capped).

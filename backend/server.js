@@ -5,10 +5,10 @@
  * - Granular REST for contests/criteria/penalties/contestants/judges/scores/tabulators/audit-logs
  * - Legacy blob sync GET/POST /api/state kept for backward compat
  */
-require('dotenv').config();
-const express = require('express');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -20,7 +20,7 @@ const { z } = require('zod');
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const ANGULAR_DIST = path.join(__dirname, 'frontend', 'dist', 'frontend', 'browser');
+const ANGULAR_DIST = path.join(__dirname, '..', 'frontend', 'dist', 'frontend', 'browser');
 const PUBLIC_DIR = fs.existsSync(ANGULAR_DIST) ? ANGULAR_DIST : path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'app-state.json');

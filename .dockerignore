@@ -1,8 +1,15 @@
 node_modules
+backend/node_modules
+frontend/node_modules
+frontend/dist
 npm-debug.log
 .git
 .gitignore
+backend/data/app-state.json
+backend/data/*.bak.*
 data/app-state.json
 logs
+backend/logs
 .env
+backend/.env
 README.md
