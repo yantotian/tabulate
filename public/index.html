@@ -1603,7 +1603,7 @@
       document.getElementById("new-tabulator-modal").classList.remove("flex");
     }
 
-    function handleCreateTabulator(event) {
+    async function handleCreateTabulator(event) {
       event.preventDefault();
       if (!currentAuthSession || !currentAuthSession.isHead) {
         showNotice("Security Violation", "Only the Head Tabulator can create other tabulators.", true);
@@ -1625,6 +1625,26 @@
         return;
       }
 
+      // Persist to backend first so account is accessible from any browser/device
+      const token = getAuthToken();
+      if (token && currentAuthSession) {
+        try {
+          await apiFetch('/api/tabulators', { method: 'POST', body: JSON.stringify({ username, name, password }) });
+          await loadStateFromBackend();
+          try { populateLoginTabulatorDropdown(); } catch {}
+          closeNewTabulatorModal();
+          renderContestSetup();
+          showNotice("Account Created", `Assistant Tabulator account '${name}' (@${username}) saved to server and now accessible from any browser.`);
+          return;
+        } catch (e) {
+          console.warn('Backend tabulator create failed, falling back to local:', e.message);
+          if (String(e.message).toLowerCase().includes('username taken') || String(e.message).includes('409')) {
+            showNotice("Username Taken", e.message, true);
+            return;
+          }
+        }
+      }
+
       const newTabulator = {
         id: `tab_${Date.now()}`,
         username: username,
@@ -1639,7 +1659,7 @@
       logTransaction("Tabulator Created", `Head Tabulator created Assistant Tabulator '${name}' (@${username}).`);
       closeNewTabulatorModal();
       renderContestSetup();
-      showNotice("Account Created", `Assistant Tabulator account '${name}' (@${username}) created successfully.`);
+      showNotice("Account Created", `Assistant Tabulator account '${name}' (@${username}) created locally. It will be synced to server when connected.`);
     }
 
     function updateTabulatorField(id, key, val) {
@@ -1691,7 +1711,20 @@
       showConfirm(
         "Remove Tabulator",
         `Are you sure you want to remove Assistant Tabulator '${target.name}' (@${target.username})?`,
-        () => {
+        async () => {
+          const token = getAuthToken();
+          if (token && currentAuthSession) {
+            try {
+              await apiFetch(`/api/tabulators/${encodeURIComponent(id)}`, { method: 'DELETE' });
+              await loadStateFromBackend();
+              try { populateLoginTabulatorDropdown(); } catch {}
+              renderContestSetup();
+              showNotice("Account Removed", `Assistant Tabulator '${target.name}' removed from server.`);
+              return;
+            } catch (e) {
+              console.warn('Backend tabulator delete failed, falling back to local:', e.message);
+            }
+          }
           appState.tabulators = appState.tabulators.filter(t => t.id !== id);
           saveState();
           logTransaction("Tabulator Removed", `Removed Assistant Tabulator account '${target.name}' (@${target.username}).`);
@@ -2391,28 +2424,68 @@
       renderContestSetup();
     }
 
-    function addJudgeToContest() {
+    async function addJudgeToContest() {
       const contest = getActiveContest();
+      if (!contest) { showNotice("No Contest", "No active contest selected.", true); return; }
       const name = `Judge ${contest.judges.length + 1}`;
+      const token = getAuthToken();
+      if (token && currentAuthSession) {
+        try {
+          await apiFetch(`/api/contests/${encodeURIComponent(contest.id)}/judges`, { method: 'POST', body: JSON.stringify({ name, password: "Bayugan123" }) });
+          await loadStateFromBackend();
+          renderContestSetup();
+          try { syncLoginJudgeDropdown(); } catch {}
+          showNotice("Judge Created", `Judge '${name}' saved to server for contest '${contest.title}' and now accessible from any browser.`);
+          return;
+        } catch (e) {
+          console.warn('Backend judge create failed, falling back to local:', e.message);
+        }
+      }
       contest.judges.push({ id: Date.now(), name: name, password: "Bayugan123" });
       saveState();
       logTransaction("Judge Added", `Added '${name}' to panel in '${contest.title}'.`);
       renderContestSetup();
     }
 
-    function updateJudge(id, key, val) {
+    async function updateJudge(id, key, val) {
       const contest = getActiveContest();
       const judge = contest.judges.find(j => j.id === id);
-      if (judge) {
-        judge[key] = val;
-        saveState();
-        logTransaction("Judge Profile Updated", `Updated ${key} for '${judge.name}' in '${contest.title}'.`);
+      if (!judge) return;
+      const token = getAuthToken();
+      if (token && currentAuthSession) {
+        try {
+          const payload = {};
+          payload[key] = val;
+          await apiFetch(`/api/contests/${encodeURIComponent(contest.id)}/judges/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+          await loadStateFromBackend();
+          renderContestSetup();
+          return;
+        } catch (e) {
+          console.warn('Backend judge update failed, falling back to local:', e.message);
+        }
       }
+      judge[key] = val;
+      saveState();
+      logTransaction("Judge Profile Updated", `Updated ${key} for '${judge.name}' in '${contest.title}'.`);
     }
 
-    function removeJudge(id) {
+    async function removeJudge(id) {
       const contest = getActiveContest();
+      if (!contest) return;
       const judge = contest.judges.find(j => j.id === id);
+      const token = getAuthToken();
+      if (token && currentAuthSession) {
+        try {
+          await apiFetch(`/api/contests/${encodeURIComponent(contest.id)}/judges/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          await loadStateFromBackend();
+          renderContestSetup();
+          try { syncLoginJudgeDropdown(); } catch {}
+          showNotice("Judge Removed", `Judge '${judge ? judge.name : id}' removed from server.`);
+          return;
+        } catch (e) {
+          console.warn('Backend judge delete failed, falling back to local:', e.message);
+        }
+      }
       contest.judges = contest.judges.filter(j => j.id !== id);
       saveState();
       logTransaction("Judge Removed", `Removed judge '${judge ? judge.name : id}' from '${contest.title}'.`);
