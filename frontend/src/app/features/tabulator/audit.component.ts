@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from '../../core/state.service';
@@ -78,6 +78,18 @@ export class AuditComponent implements OnInit {
   allowed: any[] = [];
   noticeOpen=false; noticeTitle=''; noticeMsg=''; noticeErr=false;
   get isHead() { return this.auth.isHead(); }
+
+  constructor() {
+    effect(() => {
+      this.state.state();
+      const active = this.state.activeContest;
+      if (active && (!this.contest || String(this.contest.id) !== String(active.id))) {
+        this.contest = active;
+        this.allowed = getAllowedPenalties(active);
+        if (active.judges.length) this.selectedJudgeId = active.judges[0].id;
+      }
+    });
+  }
 
   ngOnInit() { this.load(); }
   load() {

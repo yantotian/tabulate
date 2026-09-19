@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StateService } from '../../core/state.service';
 import { ApiService } from '../../core/api.service';
@@ -78,6 +78,23 @@ export class LeaderboardComponent implements OnInit {
   contest: any = null;
   results: any[] = [];
   now = new Date().toLocaleString();
+
+  constructor() {
+    effect(() => {
+      this.state.state();
+      const active = this.state.activeContest;
+      if (active && (!this.contest || String(this.contest.id) !== String(active.id))) {
+        this.contest = active;
+        this.api.getLeaderboard(active.id).subscribe({
+          next: (res: any) => {
+            if (res?.results) this.results = res.results;
+            else this.results = calculateContestResults(active);
+          },
+          error: () => this.results = calculateContestResults(active)
+        });
+      }
+    });
+  }
 
   ngOnInit() {
     const init = () => {

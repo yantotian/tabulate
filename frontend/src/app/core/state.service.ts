@@ -103,9 +103,23 @@ export class StateService {
   setActiveContest(id: string) {
     const s = this.state();
     if (!s) return;
+    // optimistic local update for instant UI feedback
+    const prev = s.activeContestId;
     s.activeContestId = id;
     localStorage.setItem('tabulator_pro_active_contest', id);
     this.state.set({ ...s });
+    // persist to backend — previously local-only, so selector appeared to do nothing after reload
+    this.api.setActiveContest(id).subscribe({
+      error: () => {
+        // rollback on failure (e.g. no access)
+        const cur = this.state();
+        if (cur) {
+          cur.activeContestId = prev;
+          localStorage.setItem('tabulator_pro_active_contest', prev);
+          this.state.set({ ...cur });
+        }
+      }
+    });
   }
 
   refreshContests() {

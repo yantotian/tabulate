@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from '../../core/state.service';
@@ -12,6 +12,7 @@ import { ConfirmModalComponent } from '../../shared/confirm-modal.component';
   standalone: true,
   imports: [CommonModule, FormsModule, NoticeModalComponent, ConfirmModalComponent],
   template: `
+  <!-- Contest-dependent Setup (changes with Active Contest selector) -->
   <div *ngIf="contest" class="space-y-6">
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-wrap items-center justify-between gap-4">
       <div class="flex-1 min-w-[280px]">
@@ -84,25 +85,6 @@ import { ConfirmModalComponent } from '../../shared/confirm-modal.component';
           </div>
           <button (click)="addPenalty()" class="w-full py-2.5 border-2 border-dashed border-rose-200 hover:border-rose-400 text-rose-700 hover:bg-rose-50/50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">+ Add Penalty Rule</button>
         </div>
-
-        <div *ngIf="isHead" class="bg-white rounded-2xl shadow-sm border border-indigo-100 p-6 relative overflow-hidden">
-          <div class="flex justify-between items-center pb-3 mb-4 border-b border-slate-100">
-            <div><h3 class="text-base font-bold text-slate-900 flex items-center gap-2"><span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-400 text-indigo-950">Head Admin Only</span><span>Tabulator Accounts Management</span></h3><p class="text-xs text-slate-500">Head exclusive portal to register assistant tabulators and manage credentials.</p></div>
-            <span class="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-md">{{ tabulators.length }}</span>
-          </div>
-          <div class="space-y-3 mb-4">
-            <div *ngFor="let t of tabulators" class="flex items-center gap-2 p-3 rounded-xl border" [ngClass]="t.isHead ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'">
-              <div class="flex-1 grid grid-cols-3 gap-2">
-                <input [(ngModel)]="t.name" (change)="updateTab(t,'name',t.name)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-medium" [readonly]="t.isHead" />
-                <input [(ngModel)]="t.username" (change)="updateTab(t,'username',t.username)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono" [readonly]="t.isHead" />
-                <span class="text-xs px-2 py-1.5 bg-white border rounded-lg font-mono text-slate-500 truncate">{{ t.isHead ? '••••••••' : '••••••••' }}</span>
-              </div>
-              <span *ngIf="t.isHead" class="text-[10px] font-black px-2 py-1 bg-amber-400 text-indigo-950 rounded">HEAD</span>
-              <button *ngIf="!t.isHead" (click)="removeTab(t.id)" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold border border-rose-200">Remove</button>
-            </div>
-          </div>
-          <button (click)="openTabModal=true" class="w-full py-2.5 bg-indigo-900 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">+ Create Another Tabulator Account</button>
-        </div>
       </div>
 
       <div class="lg:col-span-5 space-y-6">
@@ -141,6 +123,26 @@ import { ConfirmModalComponent } from '../../shared/confirm-modal.component';
   </div>
 
   <div *ngIf="!contest" class="bg-white rounded-2xl p-8 text-center text-slate-500">No accessible contest. Create one via toolbar.</div>
+
+  <!-- Constant: Tabulator Accounts Management — global, not tied to selected contest -->
+  <div *ngIf="isHead" class="bg-white rounded-2xl shadow-sm border border-indigo-100 p-6 relative overflow-hidden mt-6">
+    <div class="flex justify-between items-center pb-3 mb-4 border-b border-slate-100">
+      <div><h3 class="text-base font-bold text-slate-900 flex items-center gap-2"><span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-400 text-indigo-950">Head Admin Only</span><span>Tabulator Accounts Management</span></h3><p class="text-xs text-slate-500">Head exclusive portal to register assistant tabulators and manage credentials. Constant across all contests.</p></div>
+      <span class="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-md">{{ tabulators.length }}</span>
+    </div>
+    <div class="space-y-3 mb-4">
+      <div *ngFor="let t of tabulators" class="flex items-center gap-2 p-3 rounded-xl border" [ngClass]="t.isHead ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'">
+        <div class="flex-1 grid grid-cols-3 gap-2">
+          <input [(ngModel)]="t.name" (change)="updateTab(t,'name',t.name)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-medium" [readonly]="t.isHead" />
+          <input [(ngModel)]="t.username" (change)="updateTab(t,'username',t.username)" class="bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono" [readonly]="t.isHead" />
+          <span class="text-xs px-2 py-1.5 bg-white border rounded-lg font-mono text-slate-500 truncate">{{ t.isHead ? '••••••••' : '••••••••' }}</span>
+        </div>
+        <span *ngIf="t.isHead" class="text-[10px] font-black px-2 py-1 bg-amber-400 text-indigo-950 rounded">HEAD</span>
+        <button *ngIf="!t.isHead" (click)="removeTab(t.id)" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold border border-rose-200">Remove</button>
+      </div>
+    </div>
+    <button (click)="openTabModal=true" class="w-full py-2.5 bg-indigo-900 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">+ Create Another Tabulator Account</button>
+  </div>
 
   <!-- Add Tabulator Modal -->
   <div *ngIf="openTabModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -181,13 +183,30 @@ export class SetupComponent implements OnInit {
     return this.assistantTabs.filter(t=> ids.includes(t.id)).map(t=> t.name).join(', ') || '';
   }
 
+  constructor() {
+    // Keep contest in sync with Active Contest selector without full page reload;
+    // tabulators array is global and stays constant — not re-created on contest switch.
+    effect(() => {
+      // track state signal
+      this.state.state();
+      const active = this.state.activeContest;
+      if (active) {
+        if (!this.contest || String(this.contest.id) !== String(active.id)) this.contest = active;
+      } else if (!this.contest) {
+        this.contest = active;
+      }
+      const s = this.state.state();
+      if (s?.tabulators?.length && this.tabulators.length === 0) this.tabulators = s.tabulators;
+    });
+  }
+
   ngOnInit() { this.load(); }
   load() {
     const init = () => {
       this.contest = this.state.activeContest;
       const s = this.state.state();
       if (s) this.tabulators = s.tabulators || [];
-      // refresh from backend tabulators if head
+      // refresh from backend tabulators if head — constant, independent of contest
       if (this.isHead) this.api.getTabulators().subscribe({ next: d=> this.tabulators = d as any, error: ()=>{} });
     };
     if (this.state.state()) init(); else this.state.loadFromBackend().subscribe(()=> init());

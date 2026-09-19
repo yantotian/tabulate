@@ -20,6 +20,7 @@ export class ApiService {
 
   getState() { return this.http.get<{ exists: boolean; state: any }>('/api/state'); }
   postState(state: any) { return this.http.post('/api/state', state); }
+  setActiveContest(contestId: string) { return this.http.put<{ ok: boolean; activeContestId: string }>('/api/state/activeContest', { contestId }); }
 
   getContests() { return this.http.get<Contest[]>('/api/contests'); }
   createContest(title: string, template: string) { return this.http.post<Contest>('/api/contests', { title, template }); }

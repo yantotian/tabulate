@@ -187,7 +187,7 @@ export class ShellComponent implements OnInit {
     const has = u?.isHead || (u?.role==='judge' ? String(target.id)===String(u.contestId) : String(target.createdByTabulatorId)===String(u.tabulatorId) || (target.assignedTabulatorIds||[]).includes(u.tabulatorId));
     if (!has) { this.noticeTitle='Permission Denied'; this.noticeMsg='Access Denied: You are not authorized to view or edit this contest.'; this.noticeErr=true; this.noticeOpen=true; return; }
     this.state.setActiveContest(id);
-    location.reload();
+    // persisted via PUT /api/state/activeContest; Setup/Audit/Leaderboard now react via effect/signal — no reload, so Tabulator Accounts Management stays constant
   }
 
   createContest() {

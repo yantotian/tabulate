@@ -515,8 +515,21 @@ app.put('/api/contests/:id', authMiddleware, (req, res) => {
     contest.title = title.trim();
     logTransaction(state, 'Contest Renamed', `Renamed '${old}' to '${contest.title}' by ${req.user.name}.`, req.user.name, req.user.isHead ? 'Head Tabulator' : 'Assistant Tabulator');
   }
-  // Allow updating activeContestId via body?
   queueSave(state).then(() => res.json(contest));
+});
+
+// Persist active contest selection — selector was local-only and lost on reload
+app.put('/api/state/activeContest', authMiddleware, (req, res) => {
+  const { contestId } = req.body || {};
+  if (!contestId) return res.status(400).json({ error: 'contestId required' });
+  const state = getState();
+  const contest = state.contests.find(c => String(c.id) === String(contestId));
+  if (!contest) return res.status(404).json({ error: 'Contest not found' });
+  if (!hasContestAccess(contest, req.user)) return res.status(403).json({ error: 'Forbidden: no access to this contest' });
+  const old = state.activeContestId;
+  state.activeContestId = String(contestId);
+  logTransaction(state, 'Active Contest Changed', `Active contest changed '${old}' → '${contestId}' (${contest.title}) by ${req.user.name}.`, req.user.name, req.user.isHead ? 'Head Tabulator' : req.user.role === 'judge' ? 'Judge' : 'Assistant Tabulator');
+  queueSave(state).then(() => res.json({ ok: true, activeContestId: state.activeContestId }));
 });
 
 app.delete('/api/contests/:id', authMiddleware, (req, res) => {
