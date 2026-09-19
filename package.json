@@ -7,6 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "client:dev": "npm --prefix frontend start -- --proxy-config proxy.conf.json",
+    "client:build": "npm --prefix frontend run build",
+    "build": "npm run client:build",
+    "dev:full": "concurrently \"npm run dev\" \"npm run client:dev\"",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
     "pm2:restart": "pm2 restart ecosystem.config.js"

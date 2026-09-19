@@ -1,0 +1,407 @@
+{
+  "tabulators": [
+    {
+      "id": "tab_head",
+      "username": "admin",
+      "name": "Admin / Head Tabulator",
+      "password": "$2b$10$bSA2qO2dGdh64j9557J7MuYj9QRj2Ot6bPQM40qCjjNnX.kuoxo5m",
+      "isHead": true
+    },
+    {
+      "id": "tab_1789815418904",
+      "username": "tab1",
+      "name": "tab1",
+      "password": "$2b$10$.lNYLsIyZqqNyhLA2Dq3fO7woeP9KfCXW3DtF3uwOuLlySpYWnpTy",
+      "isHead": false
+    }
+  ],
+  "activeContestId": "contest_cooking",
+  "auditLogs": [
+    {
+      "id": "log_1789815735477_gxxvk",
+      "timestamp": "2026-09-19T11:02:15.477Z",
+      "formattedTime": "9/19/2026, 7:02:15 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815735075_9my2i",
+      "timestamp": "2026-09-19T11:02:15.075Z",
+      "formattedTime": "9/19/2026, 7:02:15 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815731824_s4jn1",
+      "timestamp": "2026-09-19T11:02:11.824Z",
+      "formattedTime": "9/19/2026, 7:02:11 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815731490_9hc1t",
+      "timestamp": "2026-09-19T11:02:11.490Z",
+      "formattedTime": "9/19/2026, 7:02:11 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815729623_dmjjv",
+      "timestamp": "2026-09-19T11:02:09.623Z",
+      "formattedTime": "9/19/2026, 7:02:09 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815729301_bok0w",
+      "timestamp": "2026-09-19T11:02:09.301Z",
+      "formattedTime": "9/19/2026, 7:02:09 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815727219_6gvdu",
+      "timestamp": "2026-09-19T11:02:07.219Z",
+      "formattedTime": "9/19/2026, 7:02:07 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815726180_no8zy",
+      "timestamp": "2026-09-19T11:02:06.180Z",
+      "formattedTime": "9/19/2026, 7:02:06 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Score Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [] total 5"
+    },
+    {
+      "id": "log_1789815715550_pzp7k",
+      "timestamp": "2026-09-19T11:01:55.550Z",
+      "formattedTime": "9/19/2026, 7:01:55 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge Gordon R.' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789815441148_aypxn",
+      "timestamp": "2026-09-19T10:57:21.148Z",
+      "formattedTime": "9/19/2026, 6:57:21 PM",
+      "actor": "tab1",
+      "role": "Assistant Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'tab1' (@tab1) authenticated as Assistant via API."
+    },
+    {
+      "id": "log_1789815418970_r16ud",
+      "timestamp": "2026-09-19T10:56:58.970Z",
+      "formattedTime": "9/19/2026, 6:56:58 PM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "Tabulator Created",
+      "details": "Head created Assistant 'tab1' (@tab1)"
+    },
+    {
+      "id": "log_1789815406631_tttoe",
+      "timestamp": "2026-09-19T10:56:46.631Z",
+      "formattedTime": "9/19/2026, 6:56:46 PM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_1789815283446_ltfli",
+      "timestamp": "2026-09-19T10:54:43.446Z",
+      "formattedTime": "9/19/2026, 6:54:43 PM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_1789815283305_u33bk",
+      "timestamp": "2026-09-19T10:54:43.305Z",
+      "formattedTime": "9/19/2026, 6:54:43 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge Gordon R.' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789815266915_s13rf",
+      "timestamp": "2026-09-19T10:54:26.915Z",
+      "formattedTime": "9/19/2026, 6:54:26 PM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge Gordon R.' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789815266730_mcts6",
+      "timestamp": "2026-09-19T10:54:26.730Z",
+      "formattedTime": "9/19/2026, 6:54:26 PM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_1789782417200_djl0s",
+      "timestamp": "2026-09-19T01:46:57.200Z",
+      "formattedTime": "9/19/2026, 9:46:57 AM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "Tabulator Removed",
+      "details": "Removed 'Assistant One'"
+    },
+    {
+      "id": "log_1789782417191_ak00a",
+      "timestamp": "2026-09-19T01:46:57.191Z",
+      "formattedTime": "9/19/2026, 9:46:57 AM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_1789782405698_g34v8",
+      "timestamp": "2026-09-19T01:46:45.698Z",
+      "formattedTime": "9/19/2026, 9:46:45 AM",
+      "actor": "Judge NewCrossBrowser",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge NewCrossBrowser' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789782405619_3ob3i",
+      "timestamp": "2026-09-19T01:46:45.619Z",
+      "formattedTime": "9/19/2026, 9:46:45 AM",
+      "actor": "Assistant One",
+      "role": "Assistant Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Assistant One' (@tab_assistant1) authenticated as Assistant via API."
+    },
+    {
+      "id": "log_1789782405428_w6hnf",
+      "timestamp": "2026-09-19T01:46:45.428Z",
+      "formattedTime": "9/19/2026, 9:46:45 AM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "Tabulator Created",
+      "details": "Head created Assistant 'Assistant One' (@tab_assistant1)"
+    },
+    {
+      "id": "log_1789782405288_hlh7e",
+      "timestamp": "2026-09-19T01:46:45.288Z",
+      "formattedTime": "9/19/2026, 9:46:45 AM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_1789750624561_rugqb",
+      "timestamp": "2026-09-18T16:57:04.561Z",
+      "formattedTime": "9/19/2026, 12:57:04 AM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge Gordon R.' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789750609191_nsw3j",
+      "timestamp": "2026-09-18T16:56:49.191Z",
+      "formattedTime": "9/19/2026, 12:56:49 AM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "Penalty Updated (API)",
+      "details": "Score update judge 401 contestant 301 penalties [201,202] total 5"
+    },
+    {
+      "id": "log_1789750609169_kwcnd",
+      "timestamp": "2026-09-18T16:56:49.169Z",
+      "formattedTime": "9/19/2026, 12:56:49 AM",
+      "actor": "Judge Gordon R.",
+      "role": "Judge",
+      "category": "User Login",
+      "details": "Judge 'Judge Gordon R.' logged into contest 'Cooking Contest Championship' via API."
+    },
+    {
+      "id": "log_1789750609000_t2xwh",
+      "timestamp": "2026-09-18T16:56:49.000Z",
+      "formattedTime": "9/19/2026, 12:56:49 AM",
+      "actor": "Admin / Head Tabulator",
+      "role": "Head Tabulator",
+      "category": "User Login",
+      "details": "Tabulator 'Admin / Head Tabulator' (@admin) authenticated as Head via API."
+    },
+    {
+      "id": "log_init",
+      "timestamp": "2026-09-18T16:56:40.698Z",
+      "formattedTime": "9/19/2026, 12:56:40 AM",
+      "actor": "System",
+      "role": "System",
+      "category": "System Initialized",
+      "details": "System initialized with Cooking Contest Championship template and Head Tabulator."
+    }
+  ],
+  "contests": [
+    {
+      "id": "contest_cooking",
+      "title": "Cooking Contest Championship",
+      "createdByTabulatorId": "tab_head",
+      "createdByName": "Admin / Head Tabulator",
+      "assignedTabulatorIds": [],
+      "criteria": [
+        {
+          "id": 101,
+          "name": "Taste & Flavor Harmony",
+          "weight": 40
+        },
+        {
+          "id": 102,
+          "name": "Plating & Visual Presentation",
+          "weight": 30
+        },
+        {
+          "id": 103,
+          "name": "Creativity & Originality",
+          "weight": 20
+        },
+        {
+          "id": 104,
+          "name": "Kitchen Hygiene & Technique",
+          "weight": 10
+        }
+      ],
+      "penalties": [
+        {
+          "id": 201,
+          "name": "Late Plating (Time Overrun)",
+          "defaultDeduction": 2
+        },
+        {
+          "id": 202,
+          "name": "Sanitation Violation",
+          "defaultDeduction": 3
+        },
+        {
+          "id": 203,
+          "name": "Missing Required Ingredient",
+          "defaultDeduction": 5
+        }
+      ],
+      "contestants": [
+        {
+          "id": 301,
+          "name": "Chef Marcus Vance (Team Scarlet)"
+        },
+        {
+          "id": 302,
+          "name": "Chef Elena Rostova (Team Sapphire)"
+        },
+        {
+          "id": 303,
+          "name": "Chef Liam Chen (Team Emerald)"
+        }
+      ],
+      "judges": [
+        {
+          "id": 401,
+          "name": "Judge Gordon R.",
+          "password": "$2b$10$.AT6bV.XsRErT8G60.LPYufQVmMvjhum352ABj0B/TMiA9Vtskqd2"
+        },
+        {
+          "id": 402,
+          "name": "Judge Julia C.",
+          "password": "Bayugan123"
+        }
+      ],
+      "scores": {
+        "401": {
+          "301": {
+            "criteria": {
+              "101": 20,
+              "102": 10,
+              "103": 10,
+              "104": 10
+            },
+            "penalty": 5,
+            "penalties": [
+              201,
+              202
+            ]
+          },
+          "302": {
+            "criteria": {
+              "101": 89,
+              "102": 94,
+              "103": 87,
+              "104": 90
+            },
+            "penalty": 0,
+            "penalties": []
+          },
+          "303": {
+            "criteria": {
+              "101": 95,
+              "102": 85,
+              "103": 92,
+              "104": 88
+            },
+            "penalty": 2,
+            "penalties": []
+          }
+        },
+        "402": {
+          "301": {
+            "criteria": {
+              "101": 90,
+              "102": 86,
+              "103": 89,
+              "104": 93
+            },
+            "penalty": 0,
+            "penalties": []
+          },
+          "302": {
+            "criteria": {
+              "101": 91,
+              "102": 95,
+              "103": 88,
+              "104": 92
+            },
+            "penalty": 0,
+            "penalties": []
+          },
+          "303": {
+            "criteria": {
+              "101": 93,
+              "102": 87,
+              "103": 90,
+              "104": 85
+            },
+            "penalty": 2,
+            "penalties": []
+          }
+        }
+      }
+    }
+  ]
+}

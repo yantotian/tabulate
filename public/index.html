@@ -223,7 +223,7 @@
             <div>
               <span class="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100 no-print">Judge Evaluation Sheet</span>
               <h1 id="judge-sheet-title" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1 uppercase tracking-tight">Official Contest Scorecard</h1>
-              <p class="text-xs text-slate-500 mt-0.5">Scoring scale: 0 to 100 per criterion. Penalties: judges may only select from penalties listed by admin/tabulator for this contest (multiple select) — deductions are summed and automatically subtracted from the weighted score.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Scoring scale: 0 to weight per criterion (e.g. 15% → 0–15, step 0.01). Each input is direct points (max = weight). Penalties: judges may only select from penalties listed by admin/tabulator — deductions summed and subtracted from direct-sum total.</p>
             </div>
 
             <!-- Terminal Actions -->
@@ -784,6 +784,7 @@
     const STORAGE_KEY = "tabulator_pro_rbac_v6_audit";
 
     const defaultState = {
+      _schemaVersion: 2,
       tabulators: [
         { id: "tab_head", username: "admin", name: "Admin / Head Tabulator", password: "Bayugan123", isHead: true }
       ],
@@ -828,14 +829,14 @@
           ],
           scores: {
             "401": {
-              "301": { criteria: { "101": 92, "102": 88, "103": 90, "104": 95 }, penalty: 0 },
-              "302": { criteria: { "101": 89, "102": 94, "103": 87, "104": 90 }, penalty: 0 },
-              "303": { criteria: { "101": 95, "102": 85, "103": 92, "104": 88 }, penalty: 2 }
+              "301": { criteria: { "101": 36.8, "102": 26.4, "103": 18, "104": 9.5 }, penalty: 0 },
+              "302": { criteria: { "101": 35.6, "102": 28.2, "103": 17.4, "104": 9 }, penalty: 0 },
+              "303": { criteria: { "101": 38, "102": 25.5, "103": 18.4, "104": 8.8 }, penalty: 2 }
             },
             "402": {
-              "301": { criteria: { "101": 90, "102": 86, "103": 89, "104": 93 }, penalty: 0 },
-              "302": { criteria: { "101": 91, "102": 95, "103": 88, "104": 92 }, penalty: 0 },
-              "303": { criteria: { "101": 93, "102": 87, "103": 90, "104": 85 }, penalty: 2 }
+              "301": { criteria: { "101": 36, "102": 25.8, "103": 17.8, "104": 9.3 }, penalty: 0 },
+              "302": { criteria: { "101": 36.4, "102": 28.5, "103": 17.6, "104": 9.2 }, penalty: 0 },
+              "303": { criteria: { "101": 37.2, "102": 26.1, "103": 18, "104": 8.5 }, penalty: 2 }
             }
           }
         }
@@ -861,6 +862,26 @@
         }
         if (!parsed.auditLogs || !Array.isArray(parsed.auditLogs)) {
           parsed.auditLogs = [];
+        }
+        if (parsed._schemaVersion === undefined) parsed._schemaVersion = 1;
+        if (parsed._schemaVersion < 2) {
+          // auto-scale legacy 0-100 -> 0->weight
+          parsed.contests.forEach(c => {
+            Object.keys(c.scores || {}).forEach(jid => {
+              Object.keys(c.scores[jid] || {}).forEach(cid => {
+                const entry = c.scores[jid][cid];
+                if (!entry?.criteria) return;
+                Object.keys(entry.criteria).forEach(critId => {
+                  const raw = parseFloat(entry.criteria[critId]);
+                  if (isNaN(raw)) return;
+                  const crit = c.criteria.find(x => String(x.id) === String(critId));
+                  const w = crit ? parseFloat(crit.weight) || 0 : 100;
+                  if (raw > w) entry.criteria[critId] = Math.round((raw * w / 100)*100)/100;
+                });
+              });
+            });
+          });
+          parsed._schemaVersion = 2;
         }
 
         if (parsed.contests && Array.isArray(parsed.contests)) {
@@ -943,6 +964,25 @@
         parsed.tabulators = JSON.parse(JSON.stringify(defaultState)).tabulators;
       }
       if (!parsed.auditLogs || !Array.isArray(parsed.auditLogs)) parsed.auditLogs = [];
+        if (parsed._schemaVersion === undefined) parsed._schemaVersion = 1;
+        if (parsed._schemaVersion < 2) {
+          parsed.contests.forEach(c => {
+            Object.keys(c.scores || {}).forEach(jid => {
+              Object.keys(c.scores[jid] || {}).forEach(cid => {
+                const entry = c.scores[jid][cid];
+                if (!entry?.criteria) return;
+                Object.keys(entry.criteria).forEach(critId => {
+                  const raw = parseFloat(entry.criteria[critId]);
+                  if (isNaN(raw)) return;
+                  const crit = c.criteria.find(x => String(x.id) === String(critId));
+                  const w = crit ? parseFloat(crit.weight) || 0 : 100;
+                  if (raw > w) entry.criteria[critId] = Math.round((raw * w / 100)*100)/100;
+                });
+              });
+            });
+          });
+          parsed._schemaVersion = 2;
+        }
       if (parsed.contests && Array.isArray(parsed.contests)) {
         parsed.contests.forEach(c => {
           if (!c.createdByTabulatorId) c.createdByTabulatorId = "tab_head";
@@ -1877,13 +1917,13 @@
                             ? contest.scores[judgeId][c.id].criteria[crit.id] : "";
 
           const numVal = parseFloat(rawScore) || 0;
-          weightedSum += (numVal * (crit.weight / 100));
+          weightedSum += numVal;
 
           rowHTML += `
             <td class="py-2.5 px-3 text-center">
-              <input type="number" min="0" max="100" step="0.5" 
+              <input type="number" min="0" max="${crit.weight}" step="0.01" 
                 value="${rawScore}" 
-                placeholder="0-100"
+                placeholder="0–${crit.weight}"
                 onchange="handleJudgeScoreInput(${judgeId}, ${c.id}, ${crit.id}, this.value)"
                 class="w-20 text-center border border-slate-300 rounded-lg py-1 px-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-600 focus:outline-none" />
             </td>
@@ -1942,7 +1982,8 @@
       if (!contest.scores[judgeId][contestantId]) contest.scores[judgeId][contestantId] = { criteria: {}, penalty: 0, penalties: [] };
       if (!contest.scores[judgeId][contestantId].criteria) contest.scores[judgeId][contestantId].criteria = {};
 
-      const cleanVal = value === "" ? "" : Math.min(100, Math.max(0, parseFloat(value) || 0));
+      const critW = (contest.criteria.find(c => String(c.id) === String(criterionId))?.weight ?? 100);
+      const cleanVal = value === "" ? "" : Math.min(critW, Math.max(0, Math.round((parseFloat(value)||0)*100)/100));
       contest.scores[judgeId][contestantId].criteria[criterionId] = cleanVal;
       saveState();
 
@@ -2320,9 +2361,29 @@
       const contest = getActiveContest();
       const crit = contest.criteria.find(c => c.id === id);
       if (crit) {
-        crit[key] = key === "weight" ? parseFloat(val) || 0 : val;
+        if (key === "weight") {
+          const oldW = parseFloat(crit.weight) || 0;
+          const newW = parseFloat(val) || 0;
+          crit[key] = newW;
+          if (oldW !== newW) {
+            Object.keys(contest.scores || {}).forEach(jid => {
+              Object.keys(contest.scores[jid] || {}).forEach(cid => {
+                const entry = contest.scores[jid][cid];
+                const raw = entry?.criteria?.[String(id)];
+                if (raw !== undefined && raw !== null && raw !== "") {
+                  const oldRaw = parseFloat(raw) || 0;
+                  const newRaw = oldW > 0 ? Math.round((oldRaw * newW / oldW)*100)/100 : Math.min(newW, oldRaw);
+                  entry.criteria[String(id)] = Math.min(newW, Math.max(0, newRaw));
+                }
+              });
+            });
+            logTransaction("Criteria Renormalized", `Renormalized '${crit.name}' ${oldW}%\u2192${newW}% scaled existing scores.`);
+          }
+        } else {
+          crit[key] = val;
+          logTransaction("Criteria Updated", `Modified '${crit.name}' (${key}: ${val}) in '${contest.title}'.`);
+        }
         saveState();
-        logTransaction("Criteria Updated", `Modified '${crit.name}' (${key}: ${val}) in '${contest.title}'.`);
         renderContestSetup();
       }
     }
@@ -2577,7 +2638,7 @@
 
           rowHTML += `
             <td class="py-2.5 px-3 text-center">
-              <input type="number" min="0" max="100" step="0.5" value="${raw}" 
+              <input type="number" min="0" max="${crit.weight}" step="0.01" value="${raw}" 
                 ${isHead ? `onchange="handleAdminScoreOverride(${judgeId}, ${c.id}, ${crit.id}, this.value)"` : 'disabled'}
                 title="${isHead ? 'Override Judge Score' : 'Restricted: Read-Only for Assistant Tabulators'}"
                 class="w-20 text-center border ${isHead ? 'border-slate-300 bg-white cursor-text focus:ring-2 focus:ring-indigo-600' : 'border-slate-200 bg-slate-100 cursor-not-allowed text-slate-500 font-bold'} rounded-lg py-1 px-2 text-xs font-semibold focus:outline-none" />
@@ -2645,7 +2706,8 @@
       if (!contest.scores[judgeId][contestantId].criteria) contest.scores[judgeId][contestantId].criteria = {};
 
       const oldVal = contest.scores[judgeId][contestantId].criteria[criterionId] || "blank";
-      const cleanVal = value === "" ? "" : Math.min(100, Math.max(0, parseFloat(value) || 0));
+      const critW = (contest.criteria.find(c => String(c.id) === String(criterionId))?.weight ?? 100);
+      const cleanVal = value === "" ? "" : Math.min(critW, Math.max(0, Math.round((parseFloat(value)||0)*100)/100));
       contest.scores[judgeId][contestantId].criteria[criterionId] = cleanVal;
       saveState();
 

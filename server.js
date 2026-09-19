@@ -20,7 +20,8 @@ const { z } = require('zod');
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const ANGULAR_DIST = path.join(__dirname, 'frontend', 'dist', 'frontend', 'browser');
+const PUBLIC_DIR = fs.existsSync(ANGULAR_DIST) ? ANGULAR_DIST : path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'app-state.json');
 const JWT_SECRET = process.env.JWT_SECRET || 'tabulator-pro-dev-secret-change-me';
@@ -38,9 +39,10 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// --- Default state (mirrors frontend index.html:786) ---
+// --- Default state (mirrors frontend index.html:786) — weight-capped 0→weight direct-sum ---
 function getDefaultState() {
   return {
+    _schemaVersion: 2,
     tabulators: [
       { id: "tab_head", username: "admin", name: "Admin / Head Tabulator", password: "Bayugan123", isHead: true }
     ],
@@ -85,14 +87,14 @@ function getDefaultState() {
         ],
         scores: {
           "401": {
-            "301": { criteria: { "101": 92, "102": 88, "103": 90, "104": 95 }, penalty: 0, penalties: [] },
-            "302": { criteria: { "101": 89, "102": 94, "103": 87, "104": 90 }, penalty: 0, penalties: [] },
-            "303": { criteria: { "101": 95, "102": 85, "103": 92, "104": 88 }, penalty: 2, penalties: [] }
+            "301": { criteria: { "101": 36.8, "102": 26.4, "103": 18, "104": 9.5 }, penalty: 0, penalties: [] },
+            "302": { criteria: { "101": 35.6, "102": 28.2, "103": 17.4, "104": 9 }, penalty: 0, penalties: [] },
+            "303": { criteria: { "101": 38, "102": 25.5, "103": 18.4, "104": 8.8 }, penalty: 2, penalties: [] }
           },
           "402": {
-            "301": { criteria: { "101": 90, "102": 86, "103": 89, "104": 93 }, penalty: 0, penalties: [] },
-            "302": { criteria: { "101": 91, "102": 95, "103": 88, "104": 92 }, penalty: 0, penalties: [] },
-            "303": { criteria: { "101": 93, "102": 87, "103": 90, "104": 85 }, penalty: 2, penalties: [] }
+            "301": { criteria: { "101": 36, "102": 25.8, "103": 17.8, "104": 9.3 }, penalty: 0, penalties: [] },
+            "302": { criteria: { "101": 36.4, "102": 28.5, "103": 17.6, "104": 9.2 }, penalty: 0, penalties: [] },
+            "303": { criteria: { "101": 37.2, "102": 26.1, "103": 18, "104": 8.5 }, penalty: 2, penalties: [] }
           }
         }
       }
@@ -122,6 +124,9 @@ function normalizeState(state) {
   }
   if (!Array.isArray(state.auditLogs)) state.auditLogs = [];
   if (!Array.isArray(state.contests)) state.contests = getDefaultState().contests;
+  // Weight-capped score schema version: 2 = direct-sum (0→weight, step 0.01)
+  if (state._schemaVersion === undefined) state._schemaVersion = 1;
+  const needsMigration = state._schemaVersion < 2;
   // Ensure each contest has required arrays
   state.contests.forEach(c => {
     if (!c.createdByTabulatorId) c.createdByTabulatorId = "tab_head";
@@ -132,9 +137,54 @@ function normalizeState(state) {
     if (!Array.isArray(c.contestants)) c.contestants = [];
     if (!Array.isArray(c.judges)) c.judges = [];
     if (!c.scores || typeof c.scores !== 'object') c.scores = {};
-    // Normalize judges/tabulators password hashes lazily - keep plaintext for backward compat but also store hash comparison via isHashed
-    // Do not auto-hash here to avoid double hash; hash on demand in verify
   });
+  // Auto-scale legacy scores: old 0–100 weighted → 0→weight direct-sum (only if schemaVersion<2)
+  if (needsMigration) {
+    let migratedCount = 0;
+    state.contests.forEach(c => {
+      Object.keys(c.scores || {}).forEach(jid => {
+        Object.keys(c.scores[jid] || {}).forEach(cid => {
+          const entry = c.scores[jid][cid];
+          if (!entry || !entry.criteria) return;
+          Object.keys(entry.criteria).forEach(critId => {
+            const raw = parseFloat(entry.criteria[critId]);
+            if (isNaN(raw)) return;
+            const w = (() => {
+              const crit = c.criteria.find(x => String(x.id) === String(critId));
+              return crit ? parseFloat(crit.weight) || 0 : 100;
+            })();
+            if (raw > w) {
+              const scaled = Math.round((raw * w / 100) * 100) / 100;
+              entry.criteria[critId] = Math.min(w, Math.max(0, scaled));
+              migratedCount++;
+            }
+          });
+        });
+      });
+    });
+    state._schemaVersion = 2;
+    if (migratedCount > 0) {
+      try {
+        if (fs.existsSync(STATE_FILE)) {
+          const bak = STATE_FILE + '.bak.' + new Date().toISOString().replace(/[:.]/g,'-');
+          fs.copyFileSync(STATE_FILE, bak);
+          console.log('[migration] weight-capped scores migrated', migratedCount, 'entries →', bak);
+        }
+      } catch (e) { console.warn('migration backup failed', e.message); }
+      if (!state.auditLogs) state.auditLogs = [];
+      state.auditLogs.unshift({
+        id: `log_${Date.now()}_migrate`,
+        timestamp: new Date().toISOString(),
+        formattedTime: new Date().toLocaleString(),
+        actor: 'System',
+        role: 'System',
+        category: 'Score Migrated (weight-cap)',
+        details: `Auto-scaled ${migratedCount} legacy scores from 0–100 weighted to 0→weight direct-sum (0.01 precision) on schema v2 migration.`
+      });
+      // persist migrated state immediately (avoid queuing race)
+      try { saveStateToFileSync(state); } catch (e) { console.warn('migration save failed', e.message); }
+    }
+  }
   // Ensure at least one head tabulator
   if (!state.tabulators.some(t => t.isHead)) state.tabulators[0].isHead = true;
   if (!state.activeContestId && state.contests.length) state.activeContestId = state.contests[0].id;
@@ -236,6 +286,11 @@ function getPenaltyTotal(contest, judgeId, contestantId) {
   if (entry && entry.penalty !== undefined && entry.penalty !== '' && entry.penalty !== null) return parseFloat(entry.penalty) || 0;
   return 0;
 }
+function getCriterionWeight(contest, cid) {
+  if (!contest || !Array.isArray(contest.criteria)) return 100;
+  const crit = contest.criteria.find(c => String(c.id) === String(cid));
+  return crit ? parseFloat(crit.weight) || 0 : 100;
+}
 
 function logTransaction(state, category, details, actor, role) {
   if (!state.auditLogs) state.auditLogs = [];
@@ -274,7 +329,7 @@ const judgeSchema = z.object({ name: z.string().min(1).max(100), password: z.str
 const scoreSchema = z.object({
   judgeId: z.union([z.string(), z.number()]),
   contestantId: z.union([z.string(), z.number()]),
-  criteria: z.record(z.string(), z.number().min(0).max(100)).optional(),
+  criteria: z.record(z.string(), z.number().min(0)).optional(), // max validated per-criterion weight
   penalties: z.array(z.union([z.string(), z.number()])).optional()
 });
 const tabulatorCreateSchema = z.object({
@@ -503,8 +558,27 @@ app.put('/api/contests/:id/criteria/:cid', authMiddleware, (req, res) => {
   if (!hasContestAccess(contest, req.user)) return res.status(403).json({ error: 'Forbidden' });
   const crit = contest.criteria.find(c => String(c.id) === String(req.params.cid));
   if (!crit) return res.status(404).json({ error: 'Criterion not found' });
+  const oldWeight = parseFloat(crit.weight) || 0;
   if (req.body.name !== undefined) crit.name = String(req.body.name);
-  if (req.body.weight !== undefined) crit.weight = Math.max(0, parseFloat(req.body.weight) || 0);
+  if (req.body.weight !== undefined) {
+    const newW = Math.max(0, parseFloat(req.body.weight) || 0);
+    crit.weight = newW;
+    // Auto-renormalize existing scores for this criterion (preserve % performance)
+    if (oldWeight !== newW) {
+      Object.keys(contest.scores || {}).forEach(jid => {
+        Object.keys(contest.scores[jid] || {}).forEach(cid => {
+          const entry = contest.scores[jid][cid];
+          const raw = entry?.criteria?.[String(crit.id)];
+          if (raw !== undefined && raw !== null && raw !== '') {
+            const oldRaw = parseFloat(raw) || 0;
+            const newRaw = oldWeight > 0 ? Math.round((oldRaw * newW / oldWeight) * 100) / 100 : Math.min(newW, oldRaw);
+            entry.criteria[String(crit.id)] = Math.min(newW, Math.max(0, newRaw));
+          }
+        });
+      });
+      logTransaction(state, 'Criteria Renormalized', `Renormalized criterion '${crit.name}' ${oldWeight}%→${newW}% scaled existing scores.`, req.user.name, req.user.isHead ? 'Head Tabulator' : 'Assistant Tabulator');
+    }
+  }
   queueSave(state).then(() => res.json(crit));
 });
 app.delete('/api/contests/:id/criteria/:cid', authMiddleware, (req, res) => {
@@ -660,11 +734,12 @@ app.put('/api/contests/:id/scores', authMiddleware, (req, res) => {
   }
   // Validate contestant exists
   if (!contest.contestants.some(c => String(c.id) === String(contestantId))) return res.status(400).json({ error: 'Contestant not found in this contest' });
-  // Validate criteria
+  // Validate criteria: weight-capped 0→weight (step 0.01)
   if (criteria) {
     for (const [cid, val] of Object.entries(criteria)) {
       if (!contest.criteria.some(c => String(c.id) === String(cid))) return res.status(400).json({ error: `Criterion ${cid} not in contest` });
-      if (typeof val !== 'number' || val < 0 || val > 100) return res.status(400).json({ error: `Score for criterion ${cid} must be 0-100` });
+      const w = getCriterionWeight(contest, cid);
+      if (typeof val !== 'number' || val < 0 || val > w) return res.status(400).json({ error: `Score for criterion ${cid} must be 0–${w}` });
     }
   }
   // Validate penalties - must be subset of contest penalties
@@ -684,7 +759,11 @@ app.put('/api/contests/:id/scores', authMiddleware, (req, res) => {
   const entry = contest.scores[String(judgeId)][String(contestantId)];
   if (criteria) {
     if (!entry.criteria) entry.criteria = {};
-    for (const [k, v] of Object.entries(criteria)) entry.criteria[k] = Math.min(100, Math.max(0, v));
+    for (const [k, v] of Object.entries(criteria)) {
+      const w = getCriterionWeight(contest, k);
+      const rounded = Math.round(parseFloat(v) * 100) / 100;
+      entry.criteria[k] = Math.min(w, Math.max(0, rounded));
+    }
   }
   if (penalties !== undefined) {
     entry.penalties = cleanPenalties;
@@ -712,7 +791,7 @@ app.get('/api/contests/:id/leaderboard', authMiddleware, (req, res) => {
       let jSum = 0;
       contest.criteria.forEach(crit => {
         const raw = contest.scores?.[j.id]?.[c.id]?.criteria?.[crit.id];
-        jSum += (parseFloat(raw) || 0) * (crit.weight / 100);
+        jSum += (parseFloat(raw) || 0);
       });
       const penalty = getPenaltyTotal(contest, j.id, c.id);
       totalDeductions += penalty;

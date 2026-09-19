@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+body { font-family: 'Inter', sans-serif; }
+
+@media print {
+  body * { visibility: hidden; }
+  .printable-area, .printable-area * { visibility: visible; }
+  .printable-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 1.5rem !important; box-shadow: none !important; border: none !important; background: white !important; }
+  .no-print { display: none !important; }
+  input[type="number"] { border: none !important; background: transparent !important; text-align: center !important; box-shadow: none !important; font-weight: 700 !important; -moz-appearance: textfield; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+}

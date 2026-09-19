@@ -2,26 +2,39 @@
 
 Full-fledged web app for contest tabulation with **RBAC** (Head Tabulator / Assistant Tabulator / Judge) and **Audit Log**. Runs on a local server and can be uploaded to any physical server (VPS, dedicated, on-prem).
 
-> Original `index.html` has been transformed into a production-ready Node.js + Express app with Docker, PM2, and Nginx support. No code rewrite of the frontend was needed - it is served statically from `public/`.
+> **Angular Transformation:** Original vanilla `index.html` (2961 LOC) has been migrated to **Angular 20 (standalone + signals)** at `frontend/` while Express backend `server.js` remains as API. Build output `frontend/dist/frontend/browser` is served by Express; legacy `public/index.html` is fallback if no build exists.
 
 ## Project Structure
 
 ```
 D:\tabulate\
+├── frontend/               # Angular 20 SPA (standalone)
+│   ├── src/app/
+│   │   ├── core/           # api.service.ts, auth.service.ts, state.service.ts, interceptors
+│   │   ├── features/auth/  # LoginComponent
+│   │   ├── features/shell/ # ShellComponent (header + contest toolbar)
+│   │   ├── features/judge/ # ScorecardComponent (judge terminal)
+│   │   ├── features/tabulator/ # Setup / Audit / Leaderboard / AuditLogs
+│   │   ├── shared/         # NoticeModal, ConfirmModal, Header
+│   │   ├── guards/         # authGuard, headGuard
+│   │   └── models/         # app-state.model.ts
+│   ├── tailwind.config.js  # Tailwind 3.4 (PostCSS build, not CDN)
+│   ├── proxy.conf.json     # dev proxy /api -> :3000
+│   └── dist/frontend/browser/ # ng build output (served by Express)
 ├── public/
-│   └── index.html          # Main SPA (served statically)
+│   └── index.html          # Legacy vanilla fallback (served if no Angular build)
 ├── data/
-│   └── app-state.json      # Optional server-side persisted state (gitignored, created on POST /api/state)
+│   └── app-state.json      # Server-side persisted state (gitignored, POST /api/state)
 ├── logs/                   # PM2 logs
-├── server.js               # Express production server
-├── package.json            # Dependencies & npm scripts
-├── ecosystem.config.js     # PM2 process manager config
-├── Dockerfile              # Container build
-├── docker-compose.yml      # One-command container deploy
-├── nginx.conf              # Example reverse-proxy config
-├── .env / .env.example     # Environment vars (PORT, HOST, NODE_ENV)
+├── server.js               # Express (serves Angular dist or public fallback)
+├── package.json            # Root scripts: build, client:build, client:dev
+├── ecosystem.config.js
+├── Dockerfile              # Multi-stage: frontend-build -> production
+├── docker-compose.yml
+├── nginx.conf
+├── .env / .env.example
 ├── .gitignore / .dockerignore
-└── index.html              # Legacy copy (root) - also kept for direct file open
+└── index.html              # Legacy root copy (direct file open)
 ```
 
 ## Quick Start - Local Server
@@ -30,18 +43,30 @@ D:\tabulate\
 - Node.js >= 18 (tested on v24.18.1)
 - npm >= 8
 
-### 1. Install & Run
+### 1. Install & Run — Production (Angular built)
 
 ```powershell
 # In D:\tabulate
 npm install
+npm --prefix frontend install
+npm run build          # builds frontend/dist/frontend/browser
 npm start
-# or for auto-reload during development:
+```
+
+### 1b. Development (HMR + API proxy)
+
+```powershell
+# Terminal 1: Express API on :3000
 npm run dev
+# Terminal 2: Angular on :4200 proxied to /api
+npm run client:dev
+# or both together:
+npm run dev:full
 ```
 
 Open:
-- **App:** http://localhost:3000
+- **App (prod):** http://localhost:3000 (Angular)
+- **App (dev):** http://localhost:4200 (Angular dev server, proxy /api -> 3000)
 - **Health:** http://localhost:3000/api/health
 - **Info:** http://localhost:3000/api/info
 
@@ -180,6 +205,7 @@ docker compose up -d && curl http://localhost:3000/api/health
 
 ## Notes
 
-- **Data:** Default app persists to browser LocalStorage only. Server-side `POST /api/state` is optional if you later wire the frontend to sync.
-- **Security:** Helmet, CORS, and compression enabled in `server.js`. For public internet, always use HTTPS (Nginx + Certbot) and consider adding authentication proxy or firewall.
-- **Portability:** No build step required - Tailwind is via CDN (`public/index.html:8`), no bundler needed. Drop `public/` on any static host and it works.
+- **Data:** Angular frontend is **backend-first**: `StateService` loads from `GET /api/state` & `GET /api/contests`; legacy `localStorage` key `tabulator_pro_rbac_v6_audit` is deprecated (only JWT token kept in `localStorage`). All scores/creations go via REST (`PUT /api/contests/:id/scores`, etc.).
+- **Security:** Helmet, CORS, compression, JWT (12h) enabled in `server.js`. RBAC enforced both client (guards) and server (`requireHead`, `hasContestAccess`).
+- **Build:** Angular production build is ~110kB transfer; Tailwind purged via PostCSS. `Dockerfile` multi-stage ensures image contains built SPA. `docker compose up -d --build` will build frontend automatically.
+- **Legacy fallback:** If `frontend/dist/frontend/browser` missing, Express falls back to `public/index.html` vanilla SPA (useful for static hosting without Node build).
